@@ -51,6 +51,7 @@
 #include "Common/Radar.h"
 #include "Common/RandomValue.h"
 #include "Common/Recorder.h"
+#include "Common/RpcServer.h"
 #include "Common/StatsCollector.h"
 #include "Common/ThingFactory.h"
 #include "Common/Team.h"
@@ -346,6 +347,9 @@ GameLogic::~GameLogic()
 	// destroy all remaining objects
 	destroyAllObjectsImmediate();
 
+	delete gRpcServer;
+	gRpcServer = nullptr;
+
 	// delete the logical terrain
 	delete TheTerrainLogic;
 	TheTerrainLogic = nullptr;
@@ -401,6 +405,11 @@ void GameLogic::init()
 	TheScriptEngine = NEW ScriptEngine;
 	TheScriptEngine->init();
 	TheScriptEngine->setName("TheScriptEngine");
+
+	if (!gRpcServer)
+	{
+		gRpcServer = new JsonTcpRpcServer(4500);
+	}
 
 	// create a team for the player
 	//DEBUG_ASSERTCRASH(ThePlayerList, ("null ThePlayerList"));
@@ -3750,6 +3759,12 @@ void GameLogic::update()
 	// Update the Recorder
 	{
 		TheRecorder->UPDATE();
+	}
+
+	// process any incoming RPC requests before applying new command messages
+	if (gRpcServer)
+	{
+		gRpcServer->ProcessRequests();
 	}
 
 	// process client commands

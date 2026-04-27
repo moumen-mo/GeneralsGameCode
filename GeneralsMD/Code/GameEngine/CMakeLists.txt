@@ -67,6 +67,7 @@ set(GAMEENGINE_SRC
 #    Include/Common/MapObject.h
     Include/Common/MapReaderWriterInfo.h
     Include/Common/MessageStream.h
+    Include/Common/RpcServer.h
     Include/Common/MiniLog.h
 #    Include/Common/MiscAudio.h
     Include/Common/MissionStats.h
@@ -599,6 +600,7 @@ set(GAMEENGINE_SRC
     Source/Common/INI/INIWebpageURL.cpp
     Source/Common/Language.cpp
     Source/Common/MessageStream.cpp
+    Source/Common/RpcServer.cpp
     Source/Common/MiniLog.cpp
     Source/Common/MultiplayerSettings.cpp
     Source/Common/NameKeyGenerator.cpp
