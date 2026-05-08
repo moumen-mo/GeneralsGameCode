@@ -241,7 +241,7 @@ void PlayerRelationMap::xfer( Xfer *xfer )
 
 	// player relation count
 	PlayerRelationMapType::iterator playerRelationIt;
-	UnsignedShort playerRelationCount = m_map.size();
+	UnsignedShort playerRelationCount = static_cast<UnsignedShort>(m_map.size());
 	xfer->xferUnsignedShort( &playerRelationCount );
 
 	// player relations
@@ -2955,7 +2955,7 @@ Bool Player::canAffordBuild( const ThingTemplate *whatToBuild ) const
 {
 	// make sure we have enough money to build this
 	const Money *money = getMoney();
-	if( whatToBuild->calcCostToBuild( this ) <= money->countMoney() )
+	if( static_cast<UnsignedInt>(whatToBuild->calcCostToBuild( this )) <= money->countMoney() )
 	{
 		return true;
 	}
@@ -3121,9 +3121,12 @@ void Player::removeUpgrade( const UpgradeTemplate *upgradeTemplate )
 		if( upgrade->friend_getPrev() )
 			upgrade->friend_getPrev()->friend_setNext( upgrade->friend_getNext() );
 		else
+		{
+			// This was the head of the list
 			m_upgradeList = upgrade->friend_getNext();
+		}
 
-		// Clear this upgrade's bits from our mind
+		// Clear this upgrade's bits from our mind.
 		const UpgradeMaskType& oldMask = upgradeTemplate->getUpgradeMask();
 		m_upgradesInProgress.clear( oldMask );
 		m_upgradesCompleted.clear( oldMask );
@@ -3131,17 +3134,11 @@ void Player::removeUpgrade( const UpgradeTemplate *upgradeTemplate )
 		if( upgrade->getStatus() == UPGRADE_STATUS_COMPLETE )
 			onUpgradeRemoved();
 
-	if( ThePlayerList->getLocalPlayer() == this )
-	{
-		TheControlBar->markUIDirty();
+		deleteInstance(upgrade);
 	}
-
-	}
-
 }
 
 
-//-------------------------------------------------------------------------------------------------
 Bool Player::okToPlayRadarEdgeSound()
 {
 	return (
@@ -3702,16 +3699,9 @@ void Player::processSelectTeamGameMessage(Int hotkeyNum, GameMessage *msg) {
 	VecObjectPtr objectList = m_squads[hotkeyNum]->getLiveObjects();
 	Int numObjs = objectList.size();
 
-	for (Int i = 0; i < numObjs; ++i)
-	{
+	for (Int i = 0; i < numObjs; ++i) {
 		m_currentSelection->addObject(objectList[i]);
 	}
-
-	if( numObjs > 0 )
-	{
-		getAcademyStats()->recordControlGroupsUsed();
-	}
-
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -3913,33 +3903,32 @@ Bool Player::getAttackedBy( Int playerNdx ) const
 }
 
 // ------------------------------------------------------------------------------------------------
-// Little wrapper function so I can use it in iterateObjects, which is cool.
-struct VisionSpiedStruct
+struct SetUnitsVisionSpiedData
 {
 	Bool setting;
 	KindOfMaskType whichUnits;
 	PlayerIndex byWhom;
 };
 
-static void iterator_setUnitsVisionSpied( Object *obj, void * voidData)
+static void setUnitsVisionSpiedForObject( Object *obj, void *userData )
 {
-	VisionSpiedStruct *data = (VisionSpiedStruct *)voidData;
+	const SetUnitsVisionSpiedData *data = static_cast<const SetUnitsVisionSpiedData *>(userData);
+	if( obj == nullptr || data == nullptr )
+		return;
 
-	// I feel I have to disapprove of the naming of this gathering of cell functions.  It is called by death,
-	// alliance change, containment, spy change, and dynamic view range as well as partition cell change.
-	if( obj && obj->isAnyKindOf(data->whichUnits) )
-		obj->setVisionSpied(data->setting, data->byWhom);
+	if( obj->isAnyKindOf( data->whichUnits ) )
+		obj->setVisionSpied( data->setting, data->byWhom );
 }
 
 // ------------------------------------------------------------------------------------------------
 void Player::setUnitsVisionSpied( Bool setting, KindOfMaskType whichUnits, PlayerIndex byWhom )
 {
-	VisionSpiedStruct data;
+	SetUnitsVisionSpiedData data;
 	data.setting = setting;
 	data.whichUnits = whichUnits;
 	data.byWhom = byWhom;
-	// Being spied is now a property of the unit, not us, since we can spy only a portion of the enemy.
-	iterateObjects( iterator_setUnitsVisionSpied, &data );
+
+	iterateObjects( setUnitsVisionSpiedForObject, &data );
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -3989,6 +3978,9 @@ void Player::crc( Xfer *xfer )
 		m_battlePlanBonuses->m_invalidKindOf.xfer(xfer);
 	}
 
+	// People have reported memory hacking their points.  That would work since
+	// buttons are authoritative, and these points just unhided buttons.
+	// Same cheat principle as pulling NeedScience off your Generals buttons.
 	xfer->xferInt( &m_skillPoints );
 	xfer->xferInt( &m_sciencePurchasePoints );
 
@@ -4359,6 +4351,11 @@ void Player::xfer( Xfer *xfer )
 	// score keeper
 	xfer->xferSnapshot( &m_scoreKeeper );
 
+
+
+
+
+
 	// size of and data for kindof percent production change list
 	UnsignedShort percentProductionChangeCount = m_kindOfPercentProductionChangeList.size();
 	xfer->xferUnsignedShort( &percentProductionChangeCount );
@@ -4554,4 +4551,5 @@ void Player::loadPostProcess()
 {
 
 }
+
 

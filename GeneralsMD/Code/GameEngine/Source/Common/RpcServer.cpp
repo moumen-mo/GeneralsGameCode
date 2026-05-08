@@ -3,10 +3,12 @@
 #include "Common/MessageStream.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/Object.h"
+#include "GameClient/Drawable.h"
 #include "Common/PlayerList.h"
 #include "Common/Player.h"
 #include "Common/Thing.h"
 #include "Common/ThingTemplate.h"
+#include "GameLogic/Module/BodyModule.h"
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -585,31 +587,59 @@ namespace
 
         const ThingTemplate *tmpl = object->getTemplate();
         if (tmpl)
-            result.objectValue["template_id"] = makeNumber(static_cast<double>(tmpl->getID()));
+        {
+            result.objectValue["template_id"] = makeNumber(static_cast<double>(tmpl->getTemplateID()));
+            result.objectValue["template_name"] = makeString(tmpl->getName().str());
+        }
 
         const Coord3D *position = object->getPosition();
         if (position)
         {
             JsonValue location = makeObject();
-            location.objectValue["x"] = makeNumber(static_cast<double>(position->m_x));
-            location.objectValue["y"] = makeNumber(static_cast<double>(position->m_y));
-            location.objectValue["z"] = makeNumber(static_cast<double>(position->m_z));
+            location.objectValue["x"] = makeNumber(static_cast<double>(position->x));
+            location.objectValue["y"] = makeNumber(static_cast<double>(position->y));
+            location.objectValue["z"] = makeNumber(static_cast<double>(position->z));
             result.objectValue["position"] = location;
         }
 
         Player *controller = object->getControllingPlayer();
         if (controller)
+        {
             result.objectValue["player_id"] = makeNumber(static_cast<double>(controller->getPlayerIndex()));
+            result.objectValue["player_name"] = makeString(controller->getSide().str());
+        }
 
-        Team *team = object->getTeam();
+        const Team *team = object->getTeam();
         if (team)
-            result.objectValue["team_name"] = makeString(team->getName().getCString());
+            result.objectValue["team_name"] = makeString(team->getName().str());
 
         BodyModuleInterface *body = object->getBodyModule();
         if (body)
         {
             result.objectValue["health"] = makeNumber(static_cast<double>(body->getHealth()));
             result.objectValue["max_health"] = makeNumber(static_cast<double>(body->getMaxHealth()));
+            
+            // Calculate health percentage for AI decision-making
+            Real maxHealth = body->getMaxHealth();
+            if (maxHealth > 0.0f)
+            {
+                Real healthPercent = (body->getHealth() / maxHealth) * 100.0f;
+                result.objectValue["health_percent"] = makeNumber(static_cast<double>(healthPercent));
+            }
+        }
+
+        // Add status information
+        result.objectValue["is_selected"] = makeBoolean(object->getDrawable() && object->getDrawable()->isSelected());
+        
+        // Add distance from center of map (useful for positioning decisions)
+        if (TheGameLogic && position)
+        {
+            Real mapCenterX = TheGameLogic->getWidth() / 2.0f;
+            Real mapCenterY = TheGameLogic->getHeight() / 2.0f;
+            Real dx = position->x - mapCenterX;
+            Real dy = position->y - mapCenterY;
+            Real distance = sqrt(dx * dx + dy * dy);
+            result.objectValue["distance_from_center"] = makeNumber(static_cast<double>(distance));
         }
 
         return result;
@@ -619,7 +649,7 @@ namespace
     {
         JsonValue result = makeObject();
         result.objectValue["player_id"] = makeNumber(static_cast<double>(player->getPlayerIndex()));
-        result.objectValue["side"] = makeString(player->getSide().getCString());
+        result.objectValue["side"] = makeString(player->getSide().str());
         result.objectValue["name_key"] = makeNumber(static_cast<double>(player->getPlayerNameKey()));
         result.objectValue["money"] = makeNumber(static_cast<double>(player->getMoney()->countMoney()));
         return result;
@@ -673,6 +703,14 @@ namespace
         JsonValue payload = makeObject();
         payload.objectValue["status"] = makeString("ok");
         return serializeJson(payload);
+    }
+
+    static JsonValue makeActionResponse(const std::string &action)
+    {
+        JsonValue payload = makeObject();
+        payload.objectValue["status"] = makeString("ok");
+        payload.objectValue["action"] = makeString(action);
+        return payload;
     }
 
     static GameMessage *buildGameMessageFromJson(const JsonValue &request, std::string &error)
@@ -790,9 +828,9 @@ namespace
                             z = 0.0;
                     }
                     Coord3D coord;
-                    coord.m_x = static_cast<Real>(x);
-                    coord.m_y = static_cast<Real>(y);
-                    coord.m_z = static_cast<Real>(z);
+                    coord.x = static_cast<Real>(x);
+                    coord.y = static_cast<Real>(y);
+                    coord.z = static_cast<Real>(z);
                     message->appendLocationArgument(coord);
                 }
                 else
@@ -885,6 +923,19 @@ namespace
         return wrapper;
     }
 
+    static bool isGameModePlayable()
+    {
+        if (!TheGameLogic)
+            return false;
+        
+        GameMode mode = TheGameLogic->getGameMode();
+                // Only allow in modes where actual gameplay is happening
+                return (mode == GAME_SKIRMISH || 
+                        mode == GAME_SINGLE_PLAYER || 
+                        mode == GAME_LAN || 
+                        mode == GAME_INTERNET);
+    }
+
     static bool buildRequestResponse(const JsonValue &request, std::string &response)
     {
         const JsonValue *actionValue = request.findMember("action");
@@ -903,6 +954,14 @@ namespace
             response = serializeJson(buildActionResponse("ping"));
             return true;
         }
+        
+        // All other actions require active gameplay
+        if (!isGameModePlayable())
+        {
+            response = makeErrorResponse("Game is not in a playable mode. Valid modes: SKIRMISH, SINGLE_PLAYER, LAN, INTERNET");
+            return false;
+        }
+        
         if (action == "get_state")
         {
             response = serializeJson(buildStateJson());
@@ -1014,7 +1073,6 @@ namespace
 
         bool initialize()
         {
-            printf("[RPC] Server initialized on port %d\n", m_port);
             WSADATA wsaData;
             if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
                 return false;
@@ -1101,7 +1159,6 @@ namespace
         {
             while (!m_stopRequested)
             {
-                printf("[RPC] Worker thread started\n");
                 fd_set readSet;
                 FD_ZERO(&readSet);
                 if (m_listenSocket != INVALID_SOCKET)
@@ -1134,7 +1191,6 @@ namespace
                     sockaddr_in clientAddress;
                     int clientAddressSize = sizeof(clientAddress);
                     SOCKET clientSocket = accept(m_listenSocket, reinterpret_cast<sockaddr *>(&clientAddress), &clientAddressSize);
-                    printf("[RPC] Client connected\n");
                     if (clientSocket != INVALID_SOCKET)
                     {
                         u_long nonBlocking = 1;
@@ -1159,7 +1215,15 @@ namespace
 
                     char buffer[4096];
                     int bytesRead = recv(clientSocket, buffer, static_cast<int>(sizeof(buffer)), 0);
-                    if (bytesRead <= 0)
+                    if (bytesRead == SOCKET_ERROR)
+                    {
+                        int lastError = WSAGetLastError();
+                        if (lastError == WSAEWOULDBLOCK)
+                            continue;
+                        closeClient(clientSocket);
+                        continue;
+                    }
+                    if (bytesRead == 0)
                     {
                         closeClient(clientSocket);
                         continue;
@@ -1231,6 +1295,7 @@ namespace
                 pending.swap(m_responseQueue);
             }
 
+            std::deque<PendingResponse> retryResponses;
             for (size_t i = 0; i < pending.size(); ++i)
             {
                 const PendingResponse &entry = pending[i];
@@ -1242,22 +1307,41 @@ namespace
                     int bytesSent = send(entry.clientSocket, entry.payload.c_str() + totalSent, messageSize - totalSent, 0);
                     if (bytesSent == SOCKET_ERROR)
                     {
+                        int lastError = WSAGetLastError();
+                        if (lastError == WSAEWOULDBLOCK)
+                        {
+                            retryResponses.push_back(PendingResponse{entry.clientSocket, entry.payload.substr(totalSent)});
+                            break;
+                        }
+
                         closeClient(entry.clientSocket);
                         break;
                     }
+
                     totalSent += bytesSent;
                 }
+            }
+
+            if (!retryResponses.empty())
+            {
+                std::lock_guard<std::mutex> lock(m_responseMutex);
+                for (size_t i = 0; i < retryResponses.size(); ++i)
+                    m_responseQueue.push_back(retryResponses[i]);
             }
         }
     };
 }
+
+struct JsonTcpRpcServer::Impl : public RpcImplementation {
+    using RpcImplementation::RpcImplementation;
+};
 
 JsonTcpRpcServer *gRpcServer = nullptr;
 
 JsonTcpRpcServer::JsonTcpRpcServer(unsigned short port)
     : m_impl(nullptr)
 {
-    m_impl = new RpcImplementation(port);
+    m_impl = new Impl(port);
     if (!m_impl->isInitialized())
     {
         delete m_impl;
