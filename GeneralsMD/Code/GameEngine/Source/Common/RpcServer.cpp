@@ -713,7 +713,63 @@ namespace
         return payload;
     }
 
-    static GameMessage *buildGameMessageFromJson(const JsonValue &request, std::string &error)
+    static bool isValidPlayerIndex(int playerIndex)
+    {
+        PlayerList *playerList = ThePlayerList;
+        if (!playerList)
+            return false;
+        if (playerIndex < 0 || playerIndex >= playerList->getPlayerCount())
+            return false;
+        return playerList->getNthPlayer(playerIndex) != nullptr;
+    }
+
+    static bool tryResolvePlayerIndexFromRequest(const JsonValue &request, int &outPlayerIndex, std::string &error)
+    {
+        const JsonValue *playerValue = request.findMember("player_index");
+        if (!playerValue)
+            playerValue = request.findMember("player_id");
+
+        if (!playerValue)
+            return true;
+
+        if (!playerValue->isNumber() || !playerValue->getInt(outPlayerIndex))
+        {
+            error = "player_index must be an integer";
+            return false;
+        }
+
+        PlayerList *playerList = ThePlayerList;
+        if (!playerList)
+        {
+            error = "ThePlayerList is not initialized";
+            return false;
+        }
+
+        if (!isValidPlayerIndex(outPlayerIndex))
+        {
+            std::ostringstream oss;
+            oss << "Invalid player_index: " << outPlayerIndex;
+            error = oss.str();
+            return false;
+        }
+
+        return true;
+    }
+
+    static bool getRequiredPlayerIndexFromRequest(const JsonValue &request, int &outPlayerIndex, std::string &error)
+    {
+        const JsonValue *playerValue = request.findMember("player_index");
+        if (!playerValue)
+            playerValue = request.findMember("player_id");
+        if (!playerValue)
+        {
+            error = "Missing player_index";
+            return false;
+        }
+        return tryResolvePlayerIndexFromRequest(request, outPlayerIndex, error);
+    }
+
+    static GameMessage *buildGameMessageFromJson(const JsonValue &request, int defaultPlayerIndex, std::string &error)
     {
         const JsonValue *typeValue = request.findMember("message_type");
         if (!typeValue)
@@ -737,6 +793,14 @@ namespace
             error = "Failed to allocate GameMessage";
             return nullptr;
         }
+
+        int requestedPlayerIndex = (defaultPlayerIndex >= 0) ? defaultPlayerIndex : message->getPlayerIndex();
+        if (!tryResolvePlayerIndexFromRequest(request, requestedPlayerIndex, error))
+        {
+            deleteInstance(message);
+            return nullptr;
+        }
+        message->friend_setPlayerIndex(requestedPlayerIndex);
 
         const JsonValue *args = request.findMember("arguments");
         if (!args)
@@ -936,8 +1000,16 @@ namespace
                         mode == GAME_INTERNET);
     }
 
-    static bool buildRequestResponse(const JsonValue &request, std::string &response)
+    static bool buildRequestResponse(
+        const JsonValue &request,
+        int defaultPlayerIndex,
+        std::string &response,
+        bool &didSetControlledPlayer,
+        int &newControlledPlayerIndex)
     {
+        didSetControlledPlayer = false;
+        newControlledPlayerIndex = defaultPlayerIndex;
+
         const JsonValue *actionValue = request.findMember("action");
         if (!actionValue || !actionValue->isString())
         {
@@ -954,7 +1026,25 @@ namespace
             response = serializeJson(buildActionResponse("ping"));
             return true;
         }
-        
+
+        if (action == "set_controlled_player")
+        {
+            int playerIndex = -1;
+            std::string error;
+            if (!getRequiredPlayerIndexFromRequest(request, playerIndex, error))
+            {
+                response = makeErrorResponse(error);
+                return false;
+            }
+
+            JsonValue actionResponse = buildActionResponse("set_controlled_player");
+            actionResponse.objectValue["player_index"] = makeNumber(static_cast<double>(playerIndex));
+            response = serializeJson(actionResponse);
+            didSetControlledPlayer = true;
+            newControlledPlayerIndex = playerIndex;
+            return true;
+        }
+
         // All other actions require active gameplay
         if (!isGameModePlayable())
         {
@@ -980,7 +1070,7 @@ namespace
         if (action == "create_game_message")
         {
             std::string error;
-            GameMessage *message = buildGameMessageFromJson(request, error);
+            GameMessage *message = buildGameMessageFromJson(request, defaultPlayerIndex, error);
             if (!message)
             {
                 response = makeErrorResponse(error);
@@ -995,7 +1085,9 @@ namespace
             }
 
             TheCommandList->appendMessage(message);
-            response = serializeJson(makeActionResponse("create_game_message"));
+            JsonValue commandResponse = makeActionResponse("create_game_message");
+            commandResponse.objectValue["player_index"] = makeNumber(static_cast<double>(message->getPlayerIndex()));
+            response = serializeJson(commandResponse);
             return true;
         }
 
@@ -1018,6 +1110,12 @@ namespace
     struct ClientState
     {
         std::string receiveBuffer;
+        int controlledPlayerIndex;
+
+        ClientState()
+            : controlledPlayerIndex(-1)
+        {
+        }
     };
 
     class RpcImplementation
@@ -1052,8 +1150,32 @@ namespace
 
             for (size_t i = 0; i < pending.size(); ++i)
             {
+                int controlledPlayerIndex = -1;
+                {
+                    std::lock_guard<std::mutex> lock(m_clientMutex);
+                    std::map<SOCKET, ClientState>::iterator it = m_clients.find(pending[i].clientSocket);
+                    if (it != m_clients.end())
+                        controlledPlayerIndex = it->second.controlledPlayerIndex;
+                }
+
                 std::string response;
-                buildRequestResponse(pending[i].request, response);
+                bool didSetControlledPlayer = false;
+                int newControlledPlayerIndex = controlledPlayerIndex;
+                buildRequestResponse(
+                    pending[i].request,
+                    controlledPlayerIndex,
+                    response,
+                    didSetControlledPlayer,
+                    newControlledPlayerIndex);
+
+                if (didSetControlledPlayer)
+                {
+                    std::lock_guard<std::mutex> lock(m_clientMutex);
+                    std::map<SOCKET, ClientState>::iterator it = m_clients.find(pending[i].clientSocket);
+                    if (it != m_clients.end())
+                        it->second.controlledPlayerIndex = newControlledPlayerIndex;
+                }
+
                 queueResponse(pending[i].clientSocket, response);
             }
         }

@@ -1,45 +1,57 @@
-# RPC Server Integration Guide for LLM AI Control
+﻿# RPC Server Integration Guide for LLM AI Control
 
 ## Overview
 
-Your RPC server enables real-time control of C&C Generals Zero Hour via JSON commands over TCP. This guide explains how to use it with an LLM agent to play against the PC AI.
+This RPC server exposes C&C Generals Zero Hour control through newline-delimited JSON over TCP.
+The behavior documented here is verified against:
+
+- `GeneralsMD/Code/GameEngine/Source/Common/RpcServer.cpp`
+- `GeneralsMD/Code/GameEngine/Include/Common/MessageStream.h`
 
 ## Quick Start
 
 ### 1. Server Connection
-- **Host**: localhost (127.0.0.1)
-- **Port**: 4500
-- **Protocol**: JSON over TCP (one command per line, newline-delimited)
+
+- Host: `127.0.0.1` (loopback only)
+- Port: `4500`
+- Protocol: JSON lines (one JSON request per line, newline-delimited)
 
 ### 2. Supported Game Modes
-✅ **GAME_SKIRMISH** - Single-player vs AI (recommended)
-✅ **GAME_SINGLE_PLAYER** - Campaign/Challenge modes
-✅ **GAME_LAN** - LAN multiplayer
-✅ **GAME_INTERNET** - Online multiplayer
-❌ **GAME_SHELL** - Menu (no game state)
+
+Allowed for gameplay actions (`get_state`, `list_players`, `list_objects`, `create_game_message`):
+
+- `GAME_SKIRMISH`
+- `GAME_SINGLE_PLAYER`
+- `GAME_LAN`
+- `GAME_INTERNET`
+
+Not playable for those actions:
+
+- `GAME_SHELL` (menu)
+
+`ping` and `set_controlled_player` are connection-level actions.
 
 ### 3. Basic Workflow
 
 ```python
-# 1. Connect to game server
+# 1) Connect to server
 client = connect_to_tcp("127.0.0.1", 4500)
 
-# 2. Get current game state
-response = send_command(client, {"action": "ping"})
+# 2) Connectivity test
+send_command(client, {"action": "ping"})
 
-# 3. Get full game state (players, units, buildings)
+# 3) Game snapshot
 state = send_command(client, {"action": "get_state"})
-
-# 4. Query players for AI decision-making
 players = send_command(client, {"action": "list_players"})
-
-# 5. Query objects (units, buildings, structures)
 objects = send_command(client, {"action": "list_objects"})
 
-# 6. Send unit commands (move, attack, build, etc.)
-cmd = send_command(client, {
+# 4) Pick controlled player once per socket
+send_command(client, {"action": "set_controlled_player", "player_index": 1})
+
+# 5) Issue command (move) - uses controlled player set above
+send_command(client, {
     "action": "create_game_message",
-    "message_type": 1001,  # MSG_DO_MOVETO
+    "message_type": 1068,  # MSG_DO_MOVETO
     "arguments": [
         {"type": "location", "x": 1000.0, "y": 2000.0, "z": 0.0}
     ]
@@ -50,235 +62,205 @@ cmd = send_command(client, {
 
 ## RPC Actions Reference
 
-### 1. PING (Connection Test)
-```json
-{
-  "action": "ping"
-}
-```
-**Response**: `{"status": "ok", "action": "ping"}`
-- Works even if game is not in playable mode
-- Use to verify connection and latency
+### 1. PING
 
----
-
-### 2. GET_STATE (Full Game State)
+Request:
 ```json
-{
-  "action": "get_state"
-}
+{"action": "ping"}
 ```
 
-**Response**:
+Typical response:
 ```json
-{
-  "status": "ok",
-  "frame": 12345,
-  "map_width": 4000.0,
-  "map_height": 4000.0,
-  "players": [
-    {
-      "player_id": 1,
-      "side": "USA",
-      "name_key": 42,
-      "money": 15000
-    },
-    ...
-  ],
-  "objects": [...],
-  "object_count": 127
-}
+{"action": "ping", "status": "ok"}
 ```
 
-**Use Case**: Get complete game snapshot for LLM decision-making
+### 2. GET_STATE
 
----
-
-### 3. LIST_PLAYERS (Player Information)
+Request:
 ```json
-{
-  "action": "list_players"
-}
+{"action": "get_state"}
 ```
 
-**Response**:
+Response fields:
+
+- `status`: `"ok"`
+- `frame`
+- `map_width`, `map_height`
+- `players` (when available)
+- `objects`
+- `object_count`
+
+### 3. LIST_PLAYERS
+
+Request:
 ```json
-{
-  "status": "ok",
-  "players": [
-    {
-      "player_id": 0,
-      "side": "USA",
-      "name_key": 0,
-      "money": 5000.0
-    },
-    {
-      "player_id": 1,
-      "side": "GLA",
-      "name_key": 1,
-      "money": 3500.0
-    }
-  ],
-  "player_count": 2
-}
+{"action": "list_players"}
 ```
 
-**Fields**:
-- `player_id`: Player index (0 = your LLM AI, 1+ = opponent/allies)
-- `side`: Faction (USA, GLA, CHINA)
-- `money`: Current available funds
-- `name_key`: Unique player identifier
+Player fields:
 
-**Use Case**: Track opponent resources and determine economic feasibility of actions
+- `player_id`
+- `side`
+- `name_key`
+- `money`
 
----
+Also includes `player_count`.
 
-### 4. LIST_OBJECTS (Units & Buildings)
+### 4. LIST_OBJECTS
+
+Request:
 ```json
-{
-  "action": "list_objects"
-}
+{"action": "list_objects"}
 ```
 
-**Response**:
+Common object fields:
+
+- `id`
+- `template_id`, `template_name` (when template exists)
+- `position` (`x`, `y`, `z`)
+- `player_id`, `player_name`
+- `team_name` (when available)
+- `health`, `max_health`, `health_percent` (when body exists)
+- `is_selected`
+- `distance_from_center`
+
+Also includes `object_count`.
+
+### 5. SET_CONTROLLED_PLAYER
+
+Set the default command owner for this TCP socket.
+
+Request:
 ```json
-{
-  "status": "ok",
-  "objects": [
-    {
-      "id": 1001,
-      "template_id": 45,
-      "template_name": "Ranger",
-      "position": {"x": 1000.0, "y": 2000.0, "z": 10.0},
-      "player_id": 0,
-      "player_name": "USA",
-      "team_name": "Team 0",
-      "health": 100.0,
-      "max_health": 100.0,
-      "health_percent": 100.0,
-      "is_selected": false,
-      "distance_from_center": 500.5
-    },
-    ...
-  ],
-  "object_count": 127
-}
+{"action": "set_controlled_player", "player_index": 1}
 ```
 
-**Fields**:
-- `id`: Unique unit/building ID (use for targeting)
-- `template_name`: Unit type (Ranger, Tank, War Factory, etc.)
-- `position`: 3D coordinates on map
-- `player_id`: Owner (0 = you, 1+ = opponent)
-- `health_percent`: Health 0-100% (critical for attack decisions)
-- `distance_from_center`: Distance from map center (useful for position assessment)
+Accepted aliases:
 
-**Use Case**: Identify targets, friendly units, and resource availability
+- `player_index` or `player_id`
 
----
+Successful response:
+```json
+{"action": "set_controlled_player", "status": "ok", "player_index": 1}
+```
 
-### 5. CREATE_GAME_MESSAGE (Send Unit Commands)
+### 6. CREATE_GAME_MESSAGE
 
-#### Message Format
+Request shape:
 ```json
 {
   "action": "create_game_message",
-  "message_type": 1001,
+  "message_type": 1068,
+  "player_index": 1,
   "arguments": [
     {"type": "location", "x": 1500.0, "y": 2500.0, "z": 0.0}
   ]
 }
 ```
 
-#### Common Command Types
+Accepted aliases:
 
-##### Move Unit to Location
+- `message_type` or `type`
+- `arguments` or `args`
+- `player_index` or `player_id`
+
+`player_index` is optional:
+
+- If provided, it overrides socket default for this one command.
+- If omitted, the server uses the socket's `set_controlled_player` value.
+- If socket default was never set, local player is used.
+
+All provided player indices must be valid integer slots from `list_players`.
+
+Argument `type` values:
+
+- `integer` / `int`
+- `real` / `float` / `double`
+- `boolean` / `bool`
+- `location` / `coord`
+
+Successful response:
+```json
+{"action": "create_game_message", "status": "ok", "player_index": 1}
+```
+
+### Controlling a Specific Army (Player Slot)
+
+1. Call `list_players`.
+2. Pick the `player_id` you want the LLM to control.
+3. Call `set_controlled_player` once for that socket.
+4. Send `create_game_message` without `player_index` (unless you want per-command override).
+
+Example:
 ```json
 {
-  "message_type": 1001,
+  "action": "set_controlled_player",
+  "player_index": 2
+}
+```
+
+Then command:
+```json
+{
+  "action": "create_game_message",
+  "message_type": 1068,
+  "arguments": [
+    {"type": "location", "x": 1400.0, "y": 2100.0, "z": 0.0}
+  ]
+}
+```
+
+---
+
+## Correct Message Type Examples
+
+### Move Unit(s)
+
+```json
+{
+  "action": "create_game_message",
+  "message_type": 1068,
   "arguments": [
     {"type": "location", "x": 1500.0, "y": 2500.0, "z": 0.0}
   ]
 }
 ```
-- **Message Type**: 1001 (MSG_DO_MOVETO)
-- **Arguments**: Target location
 
-##### Attack Move (Move + Attack)
+### Attack Object
+
 ```json
 {
-  "message_type": 1002,
-  "arguments": [
-    {"type": "location", "x": 1500.0, "y": 2500.0, "z": 0.0}
-  ]
-}
-```
-- **Message Type**: 1002 (MSG_DO_ATTACKMOVETO)
-- **Arguments**: Target location
-
-##### Attack Specific Unit
-```json
-{
-  "message_type": 1003,
+  "action": "create_game_message",
+  "message_type": 1059,
   "arguments": [
     {"type": "integer", "value": 1234}
   ]
 }
 ```
-- **Message Type**: 1003 (MSG_DO_ATTACK_OBJECT)
-- **Arguments**: Target object ID
 
-##### Force Move (Ignore enemies)
+### Build Structure
+
 ```json
 {
-  "message_type": 1004,
-  "arguments": [
-    {"type": "location", "x": 1500.0, "y": 2500.0, "z": 0.0}
-  ]
-}
-```
-- **Message Type**: 1004 (MSG_DO_FORCEMOVETO)
-
-##### Build Structure (Dozer)
-```json
-{
-  "message_type": 1050,
+  "action": "create_game_message",
+  "message_type": 1049,
   "arguments": [
     {"type": "integer", "value": 105},
     {"type": "location", "x": 2000.0, "y": 3000.0, "z": 0.0}
   ]
 }
 ```
-- **Message Type**: 1050 (MSG_DOZER_CONSTRUCT)
-- **Arguments**: Template ID, Build location
 
-##### Special Power at Location
+### Special Power At Location
+
 ```json
 {
-  "message_type": 1100,
+  "action": "create_game_message",
+  "message_type": 1041,
   "arguments": [
     {"type": "integer", "value": 42},
     {"type": "location", "x": 1500.0, "y": 2500.0, "z": 0.0}
   ]
-}
-```
-- **Message Type**: 1100 (MSG_DO_SPECIAL_POWER_AT_LOCATION)
-- **Arguments**: Special power ID, Target location
-
-#### Argument Types
-
-| Type | Description | Example |
-|------|-------------|---------|
-| `integer` | Whole number | `{"type": "integer", "value": 42}` |
-| `real` / `float` / `double` | Decimal number | `{"type": "real", "value": 123.45}` |
-| `boolean` | True/False | `{"type": "boolean", "value": true}` |
-| `location` / `coord` | 3D position | `{"type": "location", "x": 100, "y": 200, "z": 0}` |
-
-**Response**:
-```json
-{
-  "status": "ok",
-  "action": "create_game_message"
 }
 ```
 
@@ -286,236 +268,143 @@ cmd = send_command(client, {
 
 ## Error Responses
 
-### Game Not in Playable Mode
+### Game not playable
+
 ```json
 {
   "status": "error",
   "message": "Game is not in a playable mode. Valid modes: SKIRMISH, SINGLE_PLAYER, LAN, INTERNET"
 }
 ```
-**Solution**: Start a game in one of the supported modes
 
-### Missing Required Fields
+### Invalid request/action
+
 ```json
 {
   "status": "error",
   "message": "Missing or invalid action field"
 }
 ```
-**Solution**: Ensure all required JSON fields are present
 
-### Invalid Command Structure
+or
+
 ```json
 {
   "status": "error",
-  "message": "Argument missing value"
+  "message": "Unknown action: <action>"
 }
 ```
-**Solution**: Check argument types and formats
 
-### Command List Not Initialized
+### Invalid command payload
+
+Examples:
+
+- `Missing or invalid message_type`
+- `message_type must be an integer`
+- `Missing player_index`
+- `player_index must be an integer`
+- `Invalid player_index: <value>`
+- `arguments must be an array`
+- `Argument missing type field`
+- `Location argument requires x and y`
+
+### Command system not ready
+
 ```json
 {
   "status": "error",
   "message": "TheCommandList is not initialized"
 }
 ```
-**Solution**: Game is not ready; try after initial game load
 
 ---
 
-## LLM AI Implementation Strategy
+## Practical LLM Loop
 
-### Phase 1: Awareness (Read Game State)
 ```python
-def get_game_intelligence():
-    state = send_rpc("get_state")
-    players = send_rpc("list_players")
-    objects = send_rpc("list_objects")
-    
-    # Analyze:
-    # - My resources vs opponent resources
-    # - My unit positions and health
-    # - Enemy unit positions and threats
-    # - Strategic map control
-    return {
-        "my_resources": players[0]["money"],
-        "enemy_resources": players[1]["money"],
-        "my_units": [u for u in objects if u["player_id"] == 0],
-        "enemy_units": [u for u in objects if u["player_id"] == 1],
-    }
-```
+while True:
+    state = send_rpc({"action": "get_state"})
+    players = send_rpc({"action": "list_players"})
+    objects = send_rpc({"action": "list_objects"})
 
-### Phase 2: Decision Making (LLM Analysis)
-```python
-def make_decision(game_state):
-    # Prompt LLM with game state
-    prompt = f"""
-    Current game state:
-    - My money: {game_state["my_resources"]}
-    - Enemy money: {game_state["enemy_resources"]}
-    - My units: {game_state["my_units"]}
-    - Enemy units: {game_state["enemy_units"]}
-    
-    What should I do next? Return a list of unit commands.
-    """
-    
-    llm_response = call_llm(prompt)
-    return parse_commands(llm_response)
-```
+    # Build compact prompt state
+    # Decide commands
+    # Emit create_game_message calls
 
-### Phase 3: Execution (Send Commands)
-```python
-def execute_commands(commands):
-    for cmd in commands:
-        if cmd["type"] == "move":
-            send_rpc({
-                "action": "create_game_message",
-                "message_type": 1001,
-                "arguments": [
-                    {"type": "location", "x": cmd["x"], "y": cmd["y"], "z": 0}
-                ]
-            })
-        elif cmd["type"] == "attack":
-            send_rpc({
-                "action": "create_game_message",
-                "message_type": 1003,
-                "arguments": [
-                    {"type": "integer", "value": cmd["target_id"]}
-                ]
-            })
-```
-
-### Phase 4: Loop (Every Frame/Decision Tick)
-```python
-def ai_game_loop():
-    while game_running():
-        game_state = get_game_intelligence()
-        decisions = make_decision(game_state)
-        execute_commands(decisions)
-        sleep(0.1)  # ~10 times per second
+    time.sleep(0.1)  # 10 Hz
 ```
 
 ---
 
-## Important Notes
+## Notes and Constraints
 
-### 1. Unit Selection
-- Commands are executed by the **currently selected group**
-- Make sure your LLM AI's units are selected before sending commands
-- Consider: "Select my Ranger unit at position X" action
+1. Commands are applied to current game selection/context.
+2. Avoid command spam; issue deliberate commands at ~5-10 Hz.
+3. Validate targets from fresh `list_objects` data before attack/build actions.
+4. IDs are enum-backed and can change if enum order changes.
 
-### 2. Timing
-- Optimal decision frequency: **5-10 times per second** (0.1-0.2s intervals)
-- Too fast = spam, too slow = unresponsive
-- Frame rate: Check `frame` field in get_state response
-
-### 3. Target Validation
-- Always verify object exists before attacking (use `list_objects`)
-- Filter objects by `player_id` to find enemies
-- Check `health_percent` to avoid targeting dead units
-
-### 4. Resource Management
-- Monitor money via `list_players`
-- Ensure enough resources before issuing build commands
-- Consider: Tech requirements for units/buildings
-
-### 5. Multiplayer Sync (LAN/Internet)
-- Commands are automatically validated
-- Avoid command spam (queue commands, don't spam same command)
-- Game applies commands every frame for network sync
+For a current message-type table, see `RPC_COMMANDS_REFERENCE.md`.
 
 ---
 
-## Python Example Client
+## Minimal Python Client
 
 ```python
 import socket
 import json
-import time
 
 class GameRpcClient:
     def __init__(self, host="127.0.0.1", port=4500):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((host, port))
-    
+
     def send_command(self, action, **kwargs):
         msg = {"action": action}
         msg.update(kwargs)
-        
-        # Send JSON command (newline-delimited)
-        self.socket.sendall((json.dumps(msg) + "\n").encode())
-        
-        # Receive response (read until newline)
-        response = b""
-        while True:
-            chunk = self.socket.recv(1024)
-            response += chunk
-            if b"\n" in response:
+        self.socket.sendall((json.dumps(msg) + "\n").encode("utf-8"))
+
+        buf = b""
+        while b"\n" not in buf:
+            chunk = self.socket.recv(4096)
+            if not chunk:
                 break
-        
-        return json.loads(response.decode().strip())
-    
+            buf += chunk
+
+        return json.loads(buf.decode("utf-8").strip())
+
     def ping(self):
         return self.send_command("ping")
-    
+
     def get_state(self):
         return self.send_command("get_state")
-    
+
     def list_players(self):
         return self.send_command("list_players")
-    
+
+    def set_controlled_player(self, player_index):
+        return self.send_command(
+            "set_controlled_player",
+            player_index=int(player_index),
+        )
+
     def list_objects(self):
         return self.send_command("list_objects")
-    
-    def move_unit(self, x, y, z=0):
-        return self.send_command(
-            "create_game_message",
-            message_type=1001,
-            arguments=[{"type": "location", "x": x, "y": y, "z": z}]
-        )
-    
-    def attack_object(self, object_id):
-        return self.send_command(
-            "create_game_message",
-            message_type=1003,
-            arguments=[{"type": "integer", "value": object_id}]
-        )
 
-# Usage
-if __name__ == "__main__":
-    client = GameRpcClient()
-    
-    # Test connection
-    print(client.ping())
-    
-    # Get game state
-    state = client.get_state()
-    print(f"Frame: {state['frame']}, Map: {state['map_width']}x{state['map_height']}")
-    
-    # Get players
-    players = client.list_players()
-    print(f"Players: {players['player_count']}")
-    
-    # Get objects
-    objects = client.list_objects()
-    print(f"Total objects: {objects['object_count']}")
-    
-    # Issue a command
-    result = client.move_unit(1500, 2500, 0)
-    print(f"Command result: {result}")
+    def move_selected(self, x, y, z=0.0, player_index=None):
+        payload = {
+            "message_type": 1068,  # MSG_DO_MOVETO
+            "arguments": [{"type": "location", "x": x, "y": y, "z": z}],
+        }
+        if player_index is not None:
+            payload["player_index"] = int(player_index)
+        return self.send_command("create_game_message", **payload)
+
+    def attack_object(self, object_id, player_index=None):
+        payload = {
+            "message_type": 1059,  # MSG_DO_ATTACK_OBJECT
+            "arguments": [{"type": "integer", "value": int(object_id)}],
+        }
+        if player_index is not None:
+            payload["player_index"] = int(player_index)
+        return self.send_command("create_game_message", **payload)
 ```
-
----
-
-## Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| "Connection refused" | Start Generals first, ensure game is running |
-| "Game is not in a playable mode" | Load a SKIRMISH game first |
-| "Unknown action" | Check action spelling (lowercase) |
-| "TheCommandList not initialized" | Wait for game to fully load |
-| Empty object list | Check game state, units may not be visible yet |
-| Commands not executing | Verify correct message type and argument format |
-

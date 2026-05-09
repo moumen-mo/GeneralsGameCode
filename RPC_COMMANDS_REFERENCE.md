@@ -1,152 +1,155 @@
-# RPC Server - Game Commands Reference
+﻿# RPC Server - Game Commands Reference
 
-## Command Categories
+This reference is aligned with the current source in:
+`GeneralsMD/Code/GameEngine/Include/Common/MessageStream.h` and `GeneralsMD/Code/GameEngine/Source/Common/RpcServer.cpp`.
+
+## Important: `message_type` values are engine enum values
+
+RPC `create_game_message` sends a raw `GameMessage::Type` integer.
+The IDs below are the current values in this repo.
+
+## RPC Action Support (Current)
+
+| Action | Playable Game Required | Notes |
+|---|---|---|
+| `ping` | No | Connection/latency check |
+| `set_controlled_player` | No | Sets default command owner for this socket |
+| `get_state` | Yes | Full snapshot |
+| `list_players` | Yes | Player summary |
+| `list_objects` | Yes | Object summary |
+| `create_game_message` | Yes | Queues game command |
+
+---
+
+## Command Categories (Verified IDs)
+
+<!-- AUTO-GENERATED:COMMAND_TABLES:START -->
+Generated from `GeneralsMD/Code/GameEngine/Include/Common/MessageStream.h` by `python utils_mm/regenerate_rpc_command_tables.py`.
 
 ### Movement Commands
 
 | Command | Type | Arguments | Purpose |
-|---------|------|-----------|---------|
-| MSG_DO_MOVETO | 1001 | location | Move unit to position |
-| MSG_DO_ATTACKMOVETO | 1002 | location | Move and attack enemies en route |
-| MSG_DO_FORCEMOVETO | 1004 | location | Move ignoring obstacles/enemies |
-| MSG_DO_TIGHTCLUSTER | 1010 | - | Form tight formation |
-| MSG_DO_LOOSEGROUP | 1011 | - | Form loose group |
-| MSG_DO_SCATTER | 1012 | - | Scatter unit formation |
+|---|---:|---|---|
+| `MSG_DO_MOVETO` | 1068 | `location` | Move selected units |
+| `MSG_DO_ATTACKMOVETO` | 1069 | `location` | Move and attack en route |
+| `MSG_DO_FORCEMOVETO` | 1070 | `location` | Force move |
+| `MSG_ADD_WAYPOINT` | 1071 | `location` | Add waypoint |
+| `MSG_DO_GUARD_POSITION` | 1072 | `location` | Guard a position |
+| `MSG_DO_GUARD_OBJECT` | 1073 | `integer` (object id) | Guard an object |
+| `MSG_DO_STOP` | 1074 | - | Stop selected units |
+| `MSG_DO_SCATTER` | 1075 | - | Scatter selected units |
+| `MSG_CREATE_FORMATION` | 1094 | - | Formation command |
 
 ### Combat Commands
 
 | Command | Type | Arguments | Purpose |
-|---------|------|-----------|---------|
-| MSG_DO_ATTACK_OBJECT | 1003 | object_id | Attack specific unit/building |
-| MSG_DO_FORCE_ATTACK_OBJECT | 1007 | object_id | Attack with max force |
-| MSG_DO_ATTACKSQUAD | 1008 | squad_id | Attack squad of units |
+|---|---:|---|---|
+| `MSG_DO_ATTACK_OBJECT` | 1059 | `integer` (object id) | Attack target object |
+| `MSG_DO_FORCE_ATTACK_OBJECT` | 1060 | `integer` (object id) | Force-attack target object |
+| `MSG_DO_FORCE_ATTACK_GROUND` | 1061 | `location` | Attack ground location |
+| `MSG_DO_ATTACKSQUAD` | 1036 | command-specific | Attack squad command |
 
 ### Building Commands
 
 | Command | Type | Arguments | Purpose |
-|---------|------|-----------|---------|
-| MSG_DOZER_CONSTRUCT | 1050 | template_id, location | Build structure (Dozer only) |
-| MSG_SELL | 1051 | object_id | Sell building for funds |
-| MSG_REPAIR | 1052 | object_id | Repair building/unit |
-| MSG_SET_RALLY_POINT | 1055 | location | Set production rally point |
+|---|---:|---|---|
+| `MSG_DOZER_CONSTRUCT` | 1049 | `integer` (template id), `location` | Build structure |
+| `MSG_DOZER_CONSTRUCT_LINE` | 1050 | command-specific | Line construction |
+| `MSG_DOZER_CANCEL_CONSTRUCT` | 1051 | command-specific | Cancel construction |
+| `MSG_SELL` | 1052 | `integer` (object id) | Sell structure |
+| `MSG_DO_REPAIR` | 1064 | `integer` (object id) | Repair target |
+| `MSG_RESUME_CONSTRUCTION` | 1065 | `integer` (object id) | Resume construction |
+| `MSG_SET_RALLY_POINT` | 1043 | command-specific | Set rally point |
 
-### Transportation Commands
+### Transportation / Utility Commands
 
 | Command | Type | Arguments | Purpose |
-|---------|------|-----------|---------|
-| MSG_ENTER | 1060 | object_id | Enter transport/building |
-| MSG_EXIT | 1061 | - | Exit transport |
-| MSG_DOCK | 1062 | object_id | Dock at facility |
-| MSG_GET_REPAIRED | 1063 | object_id | Move to repair facility |
-| MSG_GET_HEALED | 1064 | object_id | Move to healing facility |
+|---|---:|---|---|
+| `MSG_EXIT` | 1053 | - | Exit garrison/transport |
+| `MSG_EVACUATE` | 1054 | command-specific | Evacuate contents |
+| `MSG_GET_REPAIRED` | 1062 | `integer` (object id) | Go to repair facility |
+| `MSG_GET_HEALED` | 1063 | `integer` (object id) | Go to healing facility |
+| `MSG_ENTER` | 1066 | `integer` (object id) | Enter transport/building |
+| `MSG_DOCK` | 1067 | `integer` (object id) | Dock at target |
 
 ### Special Powers
 
 | Command | Type | Arguments | Purpose |
-|---------|------|-----------|---------|
-| MSG_DO_SPECIAL_POWER_AT_LOCATION | 1100 | power_id, location | Use special power at location |
-| MSG_DO_SPECIAL_POWER_ON_OBJECT | 1101 | power_id, object_id | Use special power on unit/building |
+|---|---:|---|---|
+| `MSG_DO_SPECIAL_POWER` | 1040 | command-specific | Special power command |
+| `MSG_DO_SPECIAL_POWER_AT_LOCATION` | 1041 | `integer` (power id), `location` | Use power at location |
+| `MSG_DO_SPECIAL_POWER_AT_OBJECT` | 1042 | `integer` (power id), `integer` (object id) | Use power on object |
 
-### Unit Management
+### Unit Group Management
 
 | Command | Type | Arguments | Purpose |
-|---------|------|-----------|---------|
-| MSG_CREATE_SELECTED_GROUP | 1200 | object_id | Create group from units |
-| MSG_SELECT_TEAM0-9 | 1210-1219 | - | Select saved unit group |
-| MSG_ADD_TEAM0-9 | 1220-1229 | - | Add to saved unit group |
+|---|---:|---|---|
+| `MSG_CREATE_SELECTED_GROUP` | 1001 | command-specific | Create control group |
+| `MSG_SELECT_TEAM0`-`MSG_SELECT_TEAM9` | 1016-1025 | - | Select control group |
+| `MSG_ADD_TEAM0`-`MSG_ADD_TEAM9` | 1026-1035 | - | Add control group to selection |
 
----
+<!-- AUTO-GENERATED:COMMAND_TABLES:END -->
 
 ## Argument Type Reference
 
-### location / coord
-Specifies a 3D position on the map.
+### `location` / `coord`
 
-**Format**:
+Direct form:
 ```json
 {"type": "location", "x": 1500.0, "y": 2500.0, "z": 0.0}
 ```
 
-**Alternative format** (nested value):
+Nested form:
 ```json
 {"type": "location", "value": {"x": 1500.0, "y": 2500.0, "z": 0.0}}
 ```
 
-**Examples**:
-- `"x": 0, "y": 0` - Map corner
-- `"x": 2000, "y": 2000` - Map center (for 4000x4000 map)
-- `"z": 10` - Height above terrain (optional, defaults to 0)
-
----
-
-### integer
-Specifies an integer value (object ID, count, etc.).
-
-**Format**:
+### `integer` / `int`
 ```json
 {"type": "integer", "value": 42}
 ```
 
-**Examples**:
-- Object/Unit ID: `{"type": "integer", "value": 1234}`
-- Template ID: `{"type": "integer", "value": 105}`
-- Special Power ID: `{"type": "integer", "value": 1}`
-
----
-
-### real / float / double
-Specifies a decimal number.
-
-**Format**:
+### `real` / `float` / `double`
 ```json
 {"type": "real", "value": 123.45}
 ```
 
-**Examples**:
-- Damage: `{"type": "real", "value": 50.5}`
-- Duration: `{"type": "real", "value": 10.0}`
-
----
-
-### boolean / bool
-Specifies true or false.
-
-**Format**:
+### `boolean` / `bool`
 ```json
 {"type": "boolean", "value": true}
 ```
 
 ---
 
-## Common Command Patterns
+## Common Command Patterns (Corrected)
 
-### Pattern 1: Move Selected Units
+### Move Selected Units (`MSG_DO_MOVETO` = 1068)
 ```json
 {
   "action": "create_game_message",
-  "message_type": 1001,
+  "message_type": 1068,
   "arguments": [
     {"type": "location", "x": 2000, "y": 2500, "z": 0}
   ]
 }
 ```
 
-### Pattern 2: Attack Enemy Unit
+### Attack Object (`MSG_DO_ATTACK_OBJECT` = 1059)
 ```json
 {
   "action": "create_game_message",
-  "message_type": 1003,
+  "message_type": 1059,
   "arguments": [
     {"type": "integer", "value": 5001}
   ]
 }
 ```
 
-### Pattern 3: Build Structure
+### Build Structure (`MSG_DOZER_CONSTRUCT` = 1049)
 ```json
 {
   "action": "create_game_message",
-  "message_type": 1050,
+  "message_type": 1049,
   "arguments": [
     {"type": "integer", "value": 105},
     {"type": "location", "x": 3000, "y": 3000, "z": 0}
@@ -154,11 +157,11 @@ Specifies true or false.
 }
 ```
 
-### Pattern 4: Use Special Power
+### Use Special Power (`MSG_DO_SPECIAL_POWER_AT_LOCATION` = 1041)
 ```json
 {
   "action": "create_game_message",
-  "message_type": 1100,
+  "message_type": 1041,
   "arguments": [
     {"type": "integer", "value": 42},
     {"type": "location", "x": 2500, "y": 2500, "z": 0}
@@ -168,126 +171,65 @@ Specifies true or false.
 
 ---
 
-## Finding Template IDs
+## RPC Parser Behavior (Useful for Integrators)
 
-To determine template IDs for building commands:
+- `action` is case-insensitive (`Ping`, `PING`, `ping` all work).
+- `message_type` and `type` are accepted aliases.
+- `arguments` and `args` are accepted aliases.
+- `player_index` and `player_id` are accepted aliases for command ownership.
+- `set_controlled_player` sets socket-level default command ownership.
+- `ping` and `set_controlled_player` work outside playable game modes.
 
-1. **Use list_objects** RPC action
-2. Look at the "template_id" field for known buildings
-3. Common template IDs:
-   - War Factory: ~105
-   - Power Plant: ~110
-   - Barracks: ~115
-   - Defense Tower: ~120
+For `create_game_message`:
 
----
+- `player_index` is optional; if omitted, socket default from `set_controlled_player` is used.
+- If no socket default was set, local player is used.
+- If provided, it must be a valid player slot from `list_players`.
+- Success response echoes the effective `player_index`.
 
-## Finding Special Power IDs
+For `set_controlled_player`:
 
-To find available special powers:
-
-1. Query the game's special power manager (future enhancement)
-2. Common special powers:
-   - Air Strike: ID ~1
-   - Nuclear Strike: ID ~2
-   - Superweapon: ID ~3
+- Requires `player_index` (or `player_id`) as an integer.
+- Persists for the lifetime of the TCP socket.
+- Can be overridden per command by passing `player_index` directly to `create_game_message`.
 
 ---
 
-## Validation Tips
-
-Before sending commands, validate:
+## Validate Before Sending Commands
 
 ```python
-# 1. Unit exists (via list_objects)
-units = client.list_objects()
-unit_ids = [u["id"] for u in units if u["player_id"] == 0]
+# 1. Unit/target existence
+objects = client.list_objects()["objects"]
+controlled_player = 1
+# Optional once per connection:
+# client.send_command("set_controlled_player", player_index=controlled_player)
+my_units = [o for o in objects if o.get("player_id") == controlled_player]
+enemies = [o for o in objects if o.get("player_id") != controlled_player]
 
-# 2. Target exists (via list_objects)
-targets = [u for u in units if u["player_id"] != 0]
+# 2. Resource check
+players = client.list_players()["players"]
+my_money = next((p["money"] for p in players if p["player_id"] == controlled_player), 0)
 
-# 3. Have enough money (via list_players)
-players = client.list_players()
-my_money = players[0]["money"]
-
-# 4. Position is valid (within map bounds)
+# 3. Map bounds check
 state = client.get_state()
-if x < 0 or x > state["map_width"]:
-    print("Invalid X coordinate")
+if not (0 <= x <= state["map_width"] and 0 <= y <= state["map_height"]):
+    raise ValueError("Invalid location")
 ```
 
 ---
 
-## Command Execution Flow
+## Keeping This File Up To Date
 
-```
-LLM Agent
-    ↓
-Build JSON Command
-    ↓
-Send via RPC (TCP port 4500)
-    ↓
-RpcServer receives JSON
-    ↓
-parseJson() → JsonValue
-    ↓
-buildGameMessageFromJson() → GameMessage
-    ↓
-TheCommandList->appendMessage()
-    ↓
-GameLogic::update() processes
-    ↓
-AI Group executes (move/attack/build)
-    ↓
-Game state updates
-    ↓
-Next RPC query sees new state
+Regenerate the command tables with:
+
+```bash
+python utils_mm/regenerate_rpc_command_tables.py
 ```
 
----
+CI/drift check mode:
 
-## Performance Tips
-
-1. **Batch commands**: Send multiple commands in one decision frame
-2. **Sampling rate**: Query state every 100-200ms (5-10 Hz)
-3. **Command interval**: Queue commands but don't spam (1 per unit per decision)
-4. **Early abort**: Cancel unnecessary commands if situation changes
-5. **Predictive**: Anticipate enemy moves based on previous state
-
----
-
-## Debugging
-
-### Enable verbose responses
-
-All RPC responses include `"status": "ok"` or `"status": "error"`.
-
-### Check error messages
-```python
-response = client.send_command(cmd)
-if response.get("status") == "error":
-    print(f"Error: {response['message']}")
+```bash
+python utils_mm/regenerate_rpc_command_tables.py --check
 ```
 
-### Log all commands
-```python
-def log_command(cmd):
-    print(f"[{time.time()}] Sending: {json.dumps(cmd)}")
-```
-
-### Monitor frame rate
-```python
-state = client.get_state()
-print(f"Current frame: {state['frame']}")
-```
-
----
-
-## Limitations & Constraints
-
-- **Command latency**: ~50-100ms between RPC and execution
-- **Sync in multiplayer**: Commands must be compatible with network sync
-- **Unit capacity**: Map can support ~500 objects (performance limit)
-- **AI complexity**: Simple strategy recommended for latency tolerance
-- **Message types**: Only types 1000+ are safe for RPC (network-safe)
-
+The RPC server does not remap names to IDs; it uses the raw `GameMessage::Type` enum integer.

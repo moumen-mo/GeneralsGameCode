@@ -5,8 +5,9 @@ Local AI agent example for C&C Generals Zero Hour RPC control.
 Features:
 1. Robust newline-delimited JSON RPC client (handles buffered multi-response reads)
 2. Auto-detects controllable player (or use MY_PLAYER_ID env override)
-3. Optional local LLM planning via OpenAI-compatible local endpoint
-4. Fallback heuristic behavior when local LLM is disabled/unavailable
+3. Uses persistent set_controlled_player once per socket
+4. Optional local LLM planning via Ollama (OpenAI-compatible or native API)
+5. Fallback heuristic behavior when local LLM is disabled/unavailable
 
 Run the game in SKIRMISH mode first, then run this script.
 """
@@ -15,12 +16,15 @@ import json
 import math
 import os
 import socket
+import sys
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Dict, List, Optional
 from urllib import error as urlerror
 from urllib import request as urlrequest
-
+from dotenv import load_dotenv
+load_dotenv()
 
 # Message type values come from GeneralsMD/Code/GameEngine/Include/Common/MessageStream.h
 MSG_CREATE_SELECTED_GROUP = 1001
@@ -28,6 +32,42 @@ MSG_DO_ATTACK_OBJECT = 1059
 MSG_DO_MOVETO = 1068
 MSG_DO_ATTACKMOVETO = 1069
 MSG_DO_FORCEMOVETO = 1070
+
+
+# Global logger
+class GameLogger:
+    def __init__(self, log_file: Optional[str] = None):
+        self.log_file = log_file
+        
+    def log(self, message: str) -> None:
+        """Log to both console and file."""
+        timestamp = datetime.now().strftime('%H:%M:%S')
+        formatted = f"[{timestamp}] {message}"
+        print(formatted)
+        
+        if self.log_file:
+            try:
+                with open(self.log_file, "a") as f:
+                    f.write(formatted + "\n")
+            except Exception:
+                pass  # Silently fail if can't write
+
+
+_game_logger: Optional[GameLogger] = None
+
+
+def set_game_logger(logger: GameLogger) -> None:
+    global _game_logger
+    _game_logger = logger
+
+
+def game_log(message: str) -> None:
+    """Global logging function."""
+    if _game_logger:
+        _game_logger.log(message)
+    else:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}")
+
 
 
 IGNORE_PLAYER_SIDES = {"", "civilian", "observer"}
@@ -49,6 +89,26 @@ BUILDING_KEYWORDS = (
     "tower",
     "wall",
 )
+
+LLM_COMMAND_TUTOR = f"""You MUST output ONLY valid JSON. No text before or after.
+
+Output ONLY this exact structure:
+{{
+  "commands": [
+    {{"type": "attack_object", "unit_ids": [1, 2], "target_id": 123}},
+    {{"type": "attack_move", "unit_ids": [1, 2], "x": 100.0, "y": 200.0, "z": 0.0}}
+  ]
+}}
+
+Types: "attack_object", "attack_move", "move", "force_move"
+- attack_object: requires unit_ids, target_id
+- attack_move/move/force_move: requires unit_ids, x, y, z
+
+Rules:
+- ONLY valid JSON output
+- Max 3 commands
+- Empty array if no good moves: {{"commands": []}}
+- NO markdown, NO explanations, NO extra text"""
 
 
 @dataclass
@@ -101,7 +161,44 @@ class GameRpcClient:
         self.timeout = timeout
         self.sock: Optional[socket.socket] = None
         self.recv_buffer = ""
+        self.connection_id = 0
+        
+        # Logging setup
+        log_file = os.getenv("RPC_LOG_FILE")
+        self.log_enabled = log_file is not None and log_file.strip() != ""
+        self.log_file = log_file if self.log_enabled else None
+        self.logger = GameLogger(self.log_file)
+        
+        if self.log_enabled:
+            # Initialize log file with header
+            try:
+                with open(self.log_file, "w") as f:
+                    f.write("=" * 80 + "\n")
+                    f.write(f"RPC Communication Log - Started {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write("=" * 80 + "\n\n")
+                self.logger.log(f"RPC communication logging enabled: {self.log_file}")
+            except Exception as e:
+                print(f"Warning: Failed to initialize log file: {e}")
+                self.log_enabled = False
+        
+        # Set global logger for use throughout the script
+        set_game_logger(self.logger)
+        
         self.connect()
+
+    def _log_message(self, message_type: str, content: Dict) -> None:
+        """Log JSON message to file with timestamp."""
+        if not self.log_enabled or not self.log_file:
+            return
+        
+        try:
+            timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]  # HH:MM:SS.ms
+            with open(self.log_file, "a") as f:
+                f.write(f"[{timestamp}] {message_type}\n")
+                f.write(json.dumps(content, indent=2) + "\n")
+                f.write("-" * 80 + "\n\n")
+        except Exception as e:
+            print(f"Warning: Failed to log message: {e}")
 
     def connect(self) -> None:
         self.close()
@@ -109,7 +206,8 @@ class GameRpcClient:
         self.sock.settimeout(self.timeout)
         self.sock.connect((self.host, self.port))
         self.recv_buffer = ""
-        print(f"Connected to {self.host}:{self.port}")
+        self.connection_id += 1
+        game_log(f"Connected to {self.host}:{self.port}")
 
     def close(self) -> None:
         if self.sock is not None:
@@ -140,6 +238,9 @@ class GameRpcClient:
             self.connect()
 
         encoded = (json.dumps(payload, separators=(",", ":")) + "\n").encode("utf-8")
+        
+        # Log outgoing request
+        self._log_message("REQUEST SENT", payload)
 
         for attempt in range(retries + 1):
             try:
@@ -151,7 +252,10 @@ class GameRpcClient:
                     if not line.strip():
                         continue
                     try:
-                        return json.loads(line)
+                        response = json.loads(line)
+                        # Log received response
+                        self._log_message("RESPONSE RECEIVED", response)
+                        return response
                     except json.JSONDecodeError:
                         # If this line is malformed, continue to next line.
                         # This keeps the client resilient when mixed/garbled fragments appear.
@@ -173,6 +277,15 @@ class GameRpcClient:
 
     def get_state(self) -> Dict:
         return self.request({"action": "get_state"}, retries=1)
+
+    def set_controlled_player(self, player_index: int) -> Dict:
+        return self.request(
+            {
+                "action": "set_controlled_player",
+                "player_index": int(player_index),
+            },
+            retries=1,
+        )
 
     def create_game_message(self, message_type: int, arguments: List[Dict]) -> Dict:
         return self.request(
@@ -216,9 +329,13 @@ class GameRpcClient:
 
 class LocalLlmPlanner:
     """
-    Calls a local OpenAI-compatible endpoint.
+    Calls a local Ollama endpoint.
 
-    Expected response content JSON shape:
+    Supported endpoint styles:
+    - OpenAI-compatible: http://127.0.0.1:11434/v1/chat/completions
+    - Native Ollama API: http://127.0.0.1:11434/api/chat
+
+    Expected assistant content JSON shape:
     {
       "commands": [
         {"type":"attack_object","target_id":123,"unit_ids":[10,11]},
@@ -228,10 +345,13 @@ class LocalLlmPlanner:
     """
 
     def __init__(self) -> None:
-        self.enabled = os.getenv("LOCAL_LLM_ENABLED", "0") == "1"
+        # Default ON for local Ollama usage; set LOCAL_LLM_ENABLED=0 to disable.
+        self.enabled = os.getenv("LOCAL_LLM_ENABLED", "1") == "1"
         self.endpoint = os.getenv("LOCAL_LLM_ENDPOINT", "http://127.0.0.1:11434/v1/chat/completions")
-        self.model = os.getenv("LOCAL_LLM_MODEL", "qwen2.5:7b-instruct")
-        self.timeout = float(os.getenv("LOCAL_LLM_TIMEOUT", "12"))
+        self.model = os.getenv("LOCAL_LLM_MODEL", "qwen2.5:latest")
+        # Default timeout increased to 30 seconds; adjust with LOCAL_LLM_TIMEOUT env var
+        self.timeout = float(os.getenv("LOCAL_LLM_TIMEOUT", "30"))
+        self.llm_debug = os.getenv("LLM_DEBUG", "0") == "1"
 
     def _extract_json(self, text: str) -> Optional[Dict]:
         text = text.strip()
@@ -276,27 +396,42 @@ class LocalLlmPlanner:
         if not self.enabled:
             return []
 
-        system_prompt = (
-            "You are an RTS micro planner for C&C Generals Zero Hour. "
-            "Return ONLY JSON object with key 'commands'. "
-            "Each command: type in ['attack_object','attack_move','move','force_move'], "
-            "optional unit_ids array, and required fields for that type. "
-            "Maximum 3 commands."
-        )
+        system_prompt = LLM_COMMAND_TUTOR
 
         user_prompt = {
-            "instruction": "Choose immediate tactical commands for this tick.",
+            "instruction": (
+                "Choose immediate tactical commands for this tick. "
+                "Prioritize survival, favorable trades, and short decisive actions."
+            ),
             "state": snapshot,
         }
 
-        payload = {
-            "model": self.model,
-            "temperature": 0.2,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": json.dumps(user_prompt, separators=(",", ":"))},
-            ],
-        }
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": json.dumps(user_prompt, separators=(",", ":"))},
+        ]
+
+        use_native_ollama = "/api/chat" in self.endpoint.lower()
+        if use_native_ollama:
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                "stream": False,
+                "options": {"temperature": 0.2},
+            }
+        else:
+            payload = {
+                "model": self.model,
+                "temperature": 0.2,
+                "messages": messages,
+            }
+
+        if self.llm_debug:
+            game_log(f"[LLM DEBUG] Sending request to: {self.endpoint}")
+            game_log(f"[LLM DEBUG] Model: {self.model}")
+            game_log(f"[LLM DEBUG] Timeout: {self.timeout}s")
+            game_log(f"[LLM DEBUG] Payload size: {len(json.dumps(payload))} bytes")
+            game_log(f"[LLM DEBUG] Snapshot - my_units: {len(snapshot.get('my_units', []))}, enemy_units: {len(snapshot.get('enemy_units', []))}, objects: {len(snapshot.get('objects_in_prompt', []))}")
 
         req = urlrequest.Request(
             self.endpoint,
@@ -308,20 +443,39 @@ class LocalLlmPlanner:
         try:
             with urlrequest.urlopen(req, timeout=self.timeout) as resp:
                 body = resp.read().decode("utf-8", errors="replace")
-        except (urlerror.URLError, TimeoutError, OSError) as exc:
-            print(f"Local LLM unavailable: {exc}")
+        except urlerror.HTTPError as http_err:
+            game_log(f"Local LLM HTTP Error {http_err.code}: {http_err.reason} - Check if Ollama is running and endpoint is correct")
+            game_log(f"  Endpoint: {self.endpoint}")
+            game_log(f"  Model: {self.model}")
+            game_log(f"  Timeout: {self.timeout}s (increase with LOCAL_LLM_TIMEOUT env var)")
+            return []
+        except TimeoutError as exc:
+            game_log(f"Local LLM timeout ({self.timeout}s): {exc}")
+            game_log(f"  The LLM is taking too long. Try:")
+            game_log(f"  1. Increase timeout: set LOCAL_LLM_TIMEOUT=60")
+            game_log(f"  2. Use a faster model: ollama pull mistral:7b")
+            game_log(f"  3. Check Ollama: curl http://127.0.0.1:11434/api/tags")
+            return []
+        except (urlerror.URLError, OSError) as exc:
+            game_log(f"Local LLM unavailable: {exc}")
+            game_log(f"  Check if Ollama is running: ollama serve")
             return []
 
         try:
             result = json.loads(body)
-            content = result["choices"][0]["message"]["content"]
+            if use_native_ollama:
+                content = result["message"]["content"]
+            else:
+                content = result["choices"][0]["message"]["content"]
         except Exception:
-            print("Local LLM response format unexpected")
+            game_log("Local LLM response format unexpected")
             return []
 
         parsed = self._extract_json(content)
         if not parsed:
-            print("Local LLM did not return parseable JSON commands")
+            game_log("Local LLM did not return parseable JSON commands")
+            print("LLM response content:")
+            print(content)
             return []
 
         commands = parsed.get("commands", [])
@@ -369,9 +523,17 @@ class LocalAiController:
         self.decision_interval = int(os.getenv("DECISION_INTERVAL_FRAMES", "12"))
         self.max_frames = int(os.getenv("MAX_FRAMES", "10000"))
         self.sleep_seconds = float(os.getenv("AI_LOOP_SLEEP", "0.12"))
+        self.llm_object_limit = int(os.getenv("LLM_STATE_OBJECT_LIMIT", "140"))
+        self.llm_debug = os.getenv("LLM_DEBUG", "0") == "1"
 
         my_player_env = os.getenv("MY_PLAYER_ID")
         self.my_player_id = int(my_player_env) if my_player_env is not None else None
+        self.rpc_controlled_player_id: Optional[int] = None
+        self.rpc_controlled_player_connection_id: Optional[int] = None
+
+    @staticmethod
+    def _clamp(value: float, low: float, high: float) -> float:
+        return max(low, min(high, value))
 
     def _to_players(self, state: Dict) -> List[Player]:
         out: List[Player] = []
@@ -424,11 +586,24 @@ class LocalAiController:
             candidates.sort(key=lambda p: p.id)
             with_units = [p for p in candidates if unit_counts.get(p.id, 0) > 0]
             self.my_player_id = (with_units[0] if with_units else candidates[0]).id
-            print(f"Using player_id={self.my_player_id} ({next((p.side for p in players if p.id == self.my_player_id), 'unknown')})")
+            game_log(f"Using player_id={self.my_player_id} ({next((p.side for p in players if p.id == self.my_player_id), 'unknown')})")
             return self.my_player_id
 
         self.my_player_id = 0
         return self.my_player_id
+
+    def _ensure_rpc_controlled_player(self, player_id: int) -> None:
+        if (
+            self.rpc_controlled_player_id == player_id
+            and self.rpc_controlled_player_connection_id == self.client.connection_id
+        ):
+            return
+        reply = self.client.set_controlled_player(player_id)
+        if reply.get("status") != "ok":
+            raise RuntimeError(f"set_controlled_player failed: {reply}")
+        self.rpc_controlled_player_id = player_id
+        self.rpc_controlled_player_connection_id = self.client.connection_id
+        game_log(f"RPC controlled player set to {player_id}")
 
     def _split_for_decision(self, players: List[Player], units: List[Unit]) -> Dict:
         my_id = self._detect_player_id(players, units)
@@ -445,6 +620,143 @@ class LocalAiController:
             "my_units": my_units,
             "enemy_units": enemy_units,
         }
+
+    def _build_llm_snapshot(self, state: Dict, my_id: int, my_units: List[Unit], enemy_units: List[Unit]) -> Dict:
+        # Build players payload, excluding civilian players
+        players_payload = []
+        civilian_player_ids = set()
+        for p in state.get("players", [])[:16]:
+            side = str(p.get("side", "")).lower()
+            player_id = int(p.get("player_id", -1))
+            
+            # Track civilian player IDs to filter their objects later
+            if side in IGNORE_PLAYER_SIDES:
+                civilian_player_ids.add(player_id)
+                continue  # Skip adding civilian players to payload
+            
+            players_payload.append(
+                {
+                    "player_id": player_id,
+                    "side": side,
+                    "money": float(p.get("money", 0.0)),
+                }
+            )
+
+        # Build objects payload, excluding objects from civilian players
+        objects_payload = []
+        objects = state.get("objects", [])
+        for obj in objects[: self.llm_object_limit]:
+            obj_player_id = int(obj.get("player_id", -1))
+            
+            # Skip objects belonging to civilian players
+            if obj_player_id in civilian_player_ids:
+                continue
+            
+            pos = obj.get("position", {}) or {}
+            objects_payload.append(
+                {
+                    "id": int(obj.get("id", -1)),
+                    "template_name": str(obj.get("template_name", "Unknown")),
+                    "player_id": obj_player_id,
+                    "x": float(pos.get("x", 0.0)),
+                    "y": float(pos.get("y", 0.0)),
+                    "z": float(pos.get("z", 0.0)),
+                    "health_percent": float(obj.get("health_percent", 100.0)),
+                    "is_selected": bool(obj.get("is_selected", False)),
+                }
+            )
+
+        snapshot = {
+            "frame": int(float(state.get("frame", self.frame_count))),
+            "map_width": float(state.get("map_width", 0.0)),
+            "map_height": float(state.get("map_height", 0.0)),
+            "my_player_id": my_id,
+            "players": players_payload,
+            "object_count_total": int(state.get("object_count", len(objects))),
+            "objects_in_prompt": objects_payload,
+            "my_units": [
+                {
+                    "id": u.id,
+                    "name": u.name,
+                    "x": round(u.position.x, 1),
+                    "y": round(u.position.y, 1),
+                    "hp": round(u.health_percent, 1),
+                }
+                for u in my_units[:40]
+            ],
+            "enemy_units": [
+                {
+                    "id": u.id,
+                    "name": u.name,
+                    "x": round(u.position.x, 1),
+                    "y": round(u.position.y, 1),
+                    "hp": round(u.health_percent, 1),
+                }
+                for u in enemy_units[:40]
+            ],
+        }
+        return snapshot
+
+    def _sanitize_llm_commands(
+        self,
+        commands: List[Dict],
+        my_units: List[Unit],
+        enemy_units: List[Unit],
+        map_width: float,
+        map_height: float,
+    ) -> List[Dict]:
+        if not commands:
+            return []
+
+        my_ids = {u.id for u in my_units}
+        enemy_ids = {u.id for u in enemy_units}
+        fallback_squad = [u.id for u in my_units[:8]]
+        if not fallback_squad:
+            return []
+
+        sanitized: List[Dict] = []
+        for cmd in commands[:3]:
+            if not isinstance(cmd, dict):
+                continue
+
+            cmd_type = str(cmd.get("type", "")).strip().lower()
+            if cmd_type not in {"attack_object", "attack_move", "move", "force_move"}:
+                continue
+
+            unit_ids_raw = cmd.get("unit_ids", [])
+            unit_ids = []
+            if isinstance(unit_ids_raw, list):
+                for v in unit_ids_raw:
+                    if isinstance(v, (int, float)):
+                        obj_id = int(v)
+                        if obj_id in my_ids:
+                            unit_ids.append(obj_id)
+            if not unit_ids:
+                unit_ids = fallback_squad
+
+            normalized: Dict = {"type": cmd_type, "unit_ids": unit_ids}
+
+            if cmd_type == "attack_object":
+                target_id = cmd.get("target_id")
+                if not isinstance(target_id, (int, float)):
+                    continue
+                target_id_int = int(target_id)
+                if target_id_int not in enemy_ids:
+                    continue
+                normalized["target_id"] = target_id_int
+            else:
+                x = cmd.get("x")
+                y = cmd.get("y")
+                z = cmd.get("z", 0.0)
+                if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+                    continue
+                normalized["x"] = self._clamp(float(x), 0.0, map_width)
+                normalized["y"] = self._clamp(float(y), 0.0, map_height)
+                normalized["z"] = float(z) if isinstance(z, (int, float)) else 0.0
+
+            sanitized.append(normalized)
+
+        return sanitized
 
     def _nearest_enemy(self, unit: Unit, enemies: List[Unit]) -> Optional[Unit]:
         if not enemies:
@@ -492,23 +804,25 @@ class LocalAiController:
                 self.client.force_move_to(float(cmd["x"]), float(cmd["y"]), float(cmd.get("z", 0.0)))
 
     def run(self) -> None:
-        print("Starting AI loop")
-        print(f"Decision interval: {self.decision_interval} frames")
+        game_log("Starting AI loop")
+        game_log(f"Decision interval: {self.decision_interval} frames")
         if self.planner.enabled:
-            print(f"Local LLM planner enabled: model={self.planner.model}")
+            game_log(f"Local LLM planner enabled: model={self.planner.model}")
+            game_log(f"Local LLM endpoint: {self.planner.endpoint}")
+            game_log(f"LLM state object limit: {self.llm_object_limit}")
         else:
-            print("Local LLM planner disabled (set LOCAL_LLM_ENABLED=1 to enable)")
+            game_log("Local LLM planner disabled (set LOCAL_LLM_ENABLED=1 to enable)")
 
         while self.frame_count < self.max_frames:
             try:
                 state = self.client.get_state()
             except Exception as exc:
-                print(f"RPC state fetch failed: {exc}")
+                game_log(f"RPC state fetch failed: {exc}")
                 time.sleep(0.4)
                 continue
 
             if state.get("status") != "ok":
-                print(f"State error: {state}")
+                game_log(f"State error: {state}")
                 time.sleep(0.4)
                 continue
 
@@ -522,44 +836,40 @@ class LocalAiController:
             my_units = sliced["my_units"]
             enemy_units = sliced["enemy_units"]
 
+            try:
+                self._ensure_rpc_controlled_player(my_id)
+            except Exception as exc:
+                game_log(f"Failed to set controlled player: {exc}")
+                time.sleep(0.4)
+                continue
+
             if frame % self.decision_interval == 0:
-                snapshot = {
-                    "frame": frame,
-                    "my_player_id": my_id,
-                    "my_units": [
-                        {
-                            "id": u.id,
-                            "name": u.name,
-                            "x": round(u.position.x, 1),
-                            "y": round(u.position.y, 1),
-                            "hp": round(u.health_percent, 1),
-                        }
-                        for u in my_units[:20]
-                    ],
-                    "enemy_units": [
-                        {
-                            "id": u.id,
-                            "name": u.name,
-                            "x": round(u.position.x, 1),
-                            "y": round(u.position.y, 1),
-                            "hp": round(u.health_percent, 1),
-                        }
-                        for u in enemy_units[:20]
-                    ],
-                }
+                snapshot = self._build_llm_snapshot(state, my_id, my_units, enemy_units)
+                if self.llm_debug:
+                    game_log(
+                        f"[Frame {frame}] LLM snapshot: objects_in_prompt={len(snapshot['objects_in_prompt'])}, "
+                        f"my_units={len(snapshot['my_units'])}, enemy_units={len(snapshot['enemy_units'])}"
+                    )
 
                 commands = self.planner.plan(snapshot)
+                commands = self._sanitize_llm_commands(
+                    commands,
+                    my_units,
+                    enemy_units,
+                    map_width=float(state.get("map_width", 0.0)),
+                    map_height=float(state.get("map_height", 0.0)),
+                )
                 if not commands:
                     commands = self._fallback_commands(my_units, enemy_units)
 
                 if commands:
                     try:
                         self._execute_commands(commands)
-                        print(f"[Frame {frame}] Commands: {commands}")
+                        game_log(f"[Frame {frame}] Commands: {commands}")
                     except Exception as exc:
-                        print(f"[Frame {frame}] Command execution failed: {exc}")
+                        game_log(f"[Frame {frame}] Command execution failed: {exc}")
                 else:
-                    print(
+                    game_log(
                         f"[Frame {frame}] No commands (my_units={len(my_units)}, enemy_units={len(enemy_units)}, my_player={my_id})"
                     )
 
@@ -573,31 +883,39 @@ def main() -> None:
 
     host = os.getenv("RPC_HOST", "127.0.0.1")
     port = int(os.getenv("RPC_PORT", "4500"))
+    log_file = os.getenv("RPC_LOG_FILE")
+    
+    if log_file:
+        print(f"RPC communication will be logged to: {log_file}")
+    else:
+        print("(Set RPC_LOG_FILE environment variable to log RPC communication)")
 
     client = GameRpcClient(host=host, port=port, timeout=float(os.getenv("RPC_TIMEOUT", "10")))
     if not client.ping():
-        print("RPC ping failed")
+        game_log("RPC ping failed")
         return
 
     state = client.get_state()
     if state.get("status") == "ok":
-        print(f"Frame: {state.get('frame')}")
-        print(f"Map: {state.get('map_width')} x {state.get('map_height')}")
-        print(f"Objects: {state.get('object_count')}")
+        game_log(f"Frame: {state.get('frame')}")
+        game_log(f"Map: {state.get('map_width')} x {state.get('map_height')}")
+        game_log(f"Objects: {state.get('object_count')}")
 
         players = state.get("players", [])
-        print("Players:")
+        game_log("Players:")
         for p in players:
-            print(f"  Player {int(p.get('player_id', -1))}: {p.get('side', '')} (${float(p.get('money', 0.0)):.0f})")
+            game_log(f"  Player {int(p.get('player_id', -1))}: {p.get('side', '')} (${float(p.get('money', 0.0)):.0f})")
 
     controller = LocalAiController(client)
     try:
         controller.run()
     except KeyboardInterrupt:
-        print("Stopped by user")
+        game_log("Stopped by user")
     finally:
         client.close()
 
 
 if __name__ == "__main__":
     main()
+
+
