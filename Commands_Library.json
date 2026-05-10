@@ -1,0 +1,129 @@
+[
+
+    {
+        "command": "move",
+        "message_type": 1068,
+        "args": ["location"],
+        "description": "Moves selected units to a specific coordinate.",
+        "command_group": "Movement Commands"
+    },
+    {
+        "command": "attack_move",
+        "message_type": 1069,
+        "args": ["location"],
+        "description": "Moves units toward a location and attacks any enemies encountered along the way.",
+        "command_group": "Movement Commands"
+    },
+    {
+        "command": "force_move",
+        "message_type": 1070,
+        "args": ["location"],
+        "description": "Forces units to move to a location without stopping to attack.",
+        "command_group": "Movement Commands"
+    },
+    {
+        "command": "add_waypoint",
+        "message_type": 1071,
+        "args": ["location"],
+        "description": "Adds a waypoint to the current movement path.",
+        "command_group": "Movement Commands"
+    },
+    {
+        "command": "guard_position",
+        "message_type": 1072,
+        "args": ["location"],
+        "description": "Units move to a location and defend it.",
+        "command_group": "Movement Commands"
+    },
+    {
+        "command": "guard_object",
+        "message_type": 1073,
+        "args": ["integer"],
+        "description": "Units follow and protect a specific object ID.",
+        "command_group": "Movement Commands"
+    },
+    {
+        "command": "stop",
+        "message_type": 1074,
+        "args": [],
+        "description": "Stops selected units immediately.",
+        "command_group": "Movement Commands"
+    },
+    {
+        "command": "scatter",
+        "message_type": 1075,
+        "args": [],
+        "description": "Causes units to scatter away from their current position.",
+        "command_group": "Movement Commands"
+    },
+    {
+        "command": "attack_object",
+        "message_type": 1059,
+        "args": ["integer"],
+        "description": "Directs selected units to attack a specific object ID.",
+        "command_group": "Combat Commands"
+    },
+    {
+        "command": "force_attack_object",
+        "message_type": 1060,
+        "args": ["integer"],
+        "description": "Forces units to attack a specific object, even if it's not an enemy.",
+        "command_group": "Combat Commands"
+    },
+    {
+        "command": "force_attack_ground",
+        "message_type": 1061,
+        "args": ["location"],
+        "description": "Forces units to attack a specific ground coordinate.",
+        "command_group": "Combat Commands"
+    },
+    {
+        "command": "construct",
+        "message_type": 1049,
+        "args": ["integer", "location"],
+        "description": "Commands a Dozer to build a structure (template_id, location).",
+        "command_group": "Building Commands"
+    },
+    {
+        "command": "sell",
+        "message_type": 1052,
+        "args": ["integer"],
+        "description": "Sells a selected building (object_id).",
+        "command_group": "Building Commands"
+    },
+    {
+        "command": "repair",
+        "message_type": 1064,
+        "args": ["integer"],
+        "description": "Orders units to repair a target object (object_id).",
+        "command_group": "Building Commands"
+    },
+    {
+        "command": "exit_transport",
+        "message_type": 1053,
+        "args": [],
+        "description": "Units exit their current garrison or transport.",
+        "command_group": "Utility/Transportation"
+    },
+    {
+        "command": "enter_transport",
+        "message_type": 1066,
+        "args": ["integer"],
+        "description": "Units enter a specific transport or building (object_id).",
+        "command_group": "Utility/Transportation"
+    },
+    {
+        "command": "special_power_location",
+        "message_type": 1041,
+        "args": ["integer", "location"],
+        "description": "Activates a special power at a specific location (power_id, location).",
+        "command_group": "Special Powers"
+    },
+    {
+        "command": "special_power_object",
+        "message_type": 1042,
+        "args": ["integer", "integer"],
+        "description": "Activates a special power on a specific object (power_id, object_id).",
+        "command_group": "Special Powers"
+    }
+]

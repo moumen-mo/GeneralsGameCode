@@ -90,25 +90,28 @@ BUILDING_KEYWORDS = (
     "wall",
 )
 
-LLM_COMMAND_TUTOR = f"""You MUST output ONLY valid JSON. No text before or after.
+LLM_COMMAND_TUTOR = """You are a real-time strategy game AI. Your job is to output tactical commands in JSON format.
 
-Output ONLY this exact structure:
-{{
-  "commands": [
-    {{"type": "attack_object", "unit_ids": [1, 2], "target_id": 123}},
-    {{"type": "attack_move", "unit_ids": [1, 2], "x": 100.0, "y": 200.0, "z": 0.0}}
-  ]
-}}
+OUTPUT ONLY JSON. No other text, explanations, or code blocks.
 
-Types: "attack_object", "attack_move", "move", "force_move"
-- attack_object: requires unit_ids, target_id
-- attack_move/move/force_move: requires unit_ids, x, y, z
+JSON Structure:
+{"commands": [{"type": "attack_object", "unit_ids": [1], "target_id": 2}, {"type": "attack_move", "unit_ids": [1], "x": 100, "y": 200, "z": 0}]}
 
-Rules:
-- ONLY valid JSON output
-- Max 3 commands
-- Empty array if no good moves: {{"commands": []}}
-- NO markdown, NO explanations, NO extra text"""
+COMMAND TYPES:
+1. attack_object: {"type": "attack_object", "unit_ids": [ids...], "target_id": target}
+2. attack_move: {"type": "attack_move", "unit_ids": [ids...], "x": X, "y": Y, "z": Z}
+3. move: {"type": "move", "unit_ids": [ids...], "x": X, "y": Y, "z": Z}
+4. force_move: {"type": "force_move", "unit_ids": [ids...], "x": X, "y": Y, "z": Z}
+
+CRITICAL RULES:
+- Start response with {
+- End response with }
+- Output only valid JSON
+- Maximum 3 commands
+- If no good action: {"commands": []}
+- No markdown backticks
+- No text before or after JSON
+- Stop after the closing }"""
 
 
 @dataclass
@@ -348,7 +351,7 @@ class LocalLlmPlanner:
         # Default ON for local Ollama usage; set LOCAL_LLM_ENABLED=0 to disable.
         self.enabled = os.getenv("LOCAL_LLM_ENABLED", "1") == "1"
         self.endpoint = os.getenv("LOCAL_LLM_ENDPOINT", "http://127.0.0.1:11434/v1/chat/completions")
-        self.model = os.getenv("LOCAL_LLM_MODEL", "qwen2.5:latest")
+        self.model = os.getenv("LOCAL_LLM_MODEL", "qwen2.5-coder:1.5b-base")  # Use a smaller model for faster responses; adjust as needed
         # Default timeout increased to 30 seconds; adjust with LOCAL_LLM_TIMEOUT env var
         self.timeout = float(os.getenv("LOCAL_LLM_TIMEOUT", "30"))
         self.llm_debug = os.getenv("LLM_DEBUG", "0") == "1"
@@ -356,40 +359,79 @@ class LocalLlmPlanner:
     def _extract_json(self, text: str) -> Optional[Dict]:
         text = text.strip()
         if not text:
+            game_log("[LLM JSON] Empty response text")
             return None
+
+        if self.llm_debug:
+            game_log(f"[LLM JSON] Attempting to extract JSON from {len(text)} chars")
 
         # Direct parse
         try:
             value = json.loads(text)
             if isinstance(value, dict):
+                if self.llm_debug:
+                    game_log(f"[LLM JSON] Direct parse succeeded")
                 return value
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as e:
+            if self.llm_debug:
+                game_log(f"[LLM JSON] Direct parse failed: {e}")
 
         # Parse JSON block in fenced output
         if "```" in text:
             parts = text.split("```")
-            for part in parts:
+            for idx, part in enumerate(parts):
                 candidate = part.strip()
                 if candidate.startswith("json"):
                     candidate = candidate[4:].strip()
                 try:
                     value = json.loads(candidate)
                     if isinstance(value, dict):
+                        if self.llm_debug:
+                            game_log(f"[LLM JSON] Fenced block parse succeeded at part {idx}")
                         return value
-                except json.JSONDecodeError:
+                except json.JSONDecodeError as e:
+                    if self.llm_debug:
+                        game_log(f"[LLM JSON] Fenced block part {idx} failed: {e}")
                     continue
 
-        # Parse first object substring
+        # Parse first object substring - with improved boundary detection
         start = text.find("{")
         end = text.rfind("}")
         if start >= 0 and end > start:
-            try:
-                value = json.loads(text[start : end + 1])
-                if isinstance(value, dict):
-                    return value
-            except json.JSONDecodeError:
-                return None
+            # Try to find the most complete JSON object by checking bracket balance
+            open_count = 0
+            best_end = -1
+            
+            for i in range(start, min(end + 1, len(text))):
+                if text[i] == "{":
+                    open_count += 1
+                elif text[i] == "}":
+                    open_count -= 1
+                    if open_count == 0:
+                        best_end = i
+                        break  # Found first complete object
+            
+            if best_end > start:
+                candidate_text = text[start : best_end + 1]
+                if self.llm_debug:
+                    game_log(f"[LLM JSON] Trying substring extraction: chars {start}-{best_end} ({len(candidate_text)} bytes)")
+                
+                try:
+                    value = json.loads(candidate_text)
+                    if isinstance(value, dict) and "commands" in value:
+                        if self.llm_debug:
+                            game_log(f"[LLM JSON] Substring parse succeeded with 'commands' key")
+                        return value
+                    elif isinstance(value, dict):
+                        if self.llm_debug:
+                            game_log(f"[LLM JSON] Substring parse succeeded but missing 'commands' key")
+                except json.JSONDecodeError as e:
+                    if self.llm_debug:
+                        game_log(f"[LLM JSON] Substring parse failed: {e}")
+                        game_log(f"[LLM JSON] Failed text: {candidate_text[:150]}...")
+        
+        if self.llm_debug:
+            game_log(f"[LLM JSON] All extraction methods exhausted. First 200 chars: {text[:200]}")
         return None
 
     def plan(self, snapshot: Dict) -> List[Dict]:
@@ -418,6 +460,7 @@ class LocalLlmPlanner:
                 "messages": messages,
                 "stream": False,
                 "options": {"temperature": 0.2},
+                "think": True,  # Enable Ollama's internal reasoning trace if supported
             }
         else:
             payload = {
@@ -461,26 +504,47 @@ class LocalLlmPlanner:
             game_log(f"  Check if Ollama is running: ollama serve")
             return []
 
+        if self.llm_debug:
+            game_log(f"[LLM RESPONSE] Raw response body ({len(body)} bytes): {body[:300]}..." if len(body) > 300 else f"[LLM RESPONSE] Raw response body: {body}")
+
         try:
             result = json.loads(body)
             if use_native_ollama:
                 content = result["message"]["content"]
             else:
                 content = result["choices"][0]["message"]["content"]
-        except Exception:
-            game_log("Local LLM response format unexpected")
+            if self.llm_debug:
+                game_log(f"[LLM RESPONSE] Extracted content ({len(content)} bytes): {content[:200]}..." if len(content) > 200 else f"[LLM RESPONSE] Extracted content: {content}")
+                game_log(f"[LLM RESPONSE] thinking trace (if available): {result.get('thinking', 'N/A')}")
+        except Exception as e:
+            game_log(f"Local LLM response format unexpected: {e}")
+            if self.llm_debug:
+                game_log(f"[LLM RESPONSE] Failed to extract content. Full body: {body[:500]}")
             return []
 
         parsed = self._extract_json(content)
         if not parsed:
             game_log("Local LLM did not return parseable JSON commands")
-            print("LLM response content:")
-            print(content)
+            if self.llm_debug:
+                print("LLM response content (full):")
+                print(repr(content))
+                print("\nLLM response body (full):")
+                print(repr(body))
             return []
 
+        # Validate that the parsed JSON has the expected structure
+        if "commands" not in parsed:
+            game_log(f"Local LLM JSON missing 'commands' key. Keys found: {list(parsed.keys())}")
+            return []
+        
         commands = parsed.get("commands", [])
         if not isinstance(commands, list):
+            game_log(f"Local LLM 'commands' is not a list, got {type(commands).__name__}")
             return []
+        
+        if not commands:
+            if self.llm_debug:
+                game_log("[LLM] Empty commands list returned")
 
         safe_commands: List[Dict] = []
         for cmd in commands[:3]:
