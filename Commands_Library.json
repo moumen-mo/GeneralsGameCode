@@ -1,44 +1,55 @@
 [
-
     {
         "command": "move",
         "message_type": 1068,
-        "args": ["location"],
+        "args": [
+            "location"
+        ],
         "description": "Moves selected units to a specific coordinate.",
         "command_group": "Movement Commands"
     },
     {
         "command": "attack_move",
         "message_type": 1069,
-        "args": ["location"],
+        "args": [
+            "location"
+        ],
         "description": "Moves units toward a location and attacks any enemies encountered along the way.",
         "command_group": "Movement Commands"
     },
     {
         "command": "force_move",
         "message_type": 1070,
-        "args": ["location"],
+        "args": [
+            "location"
+        ],
         "description": "Forces units to move to a location without stopping to attack.",
         "command_group": "Movement Commands"
     },
     {
         "command": "add_waypoint",
         "message_type": 1071,
-        "args": ["location"],
+        "args": [
+            "location"
+        ],
         "description": "Adds a waypoint to the current movement path.",
         "command_group": "Movement Commands"
     },
     {
         "command": "guard_position",
         "message_type": 1072,
-        "args": ["location"],
+        "args": [
+            "location"
+        ],
         "description": "Units move to a location and defend it.",
         "command_group": "Movement Commands"
     },
     {
         "command": "guard_object",
         "message_type": 1073,
-        "args": ["integer"],
+        "args": [
+            "integer"
+        ],
         "description": "Units follow and protect a specific object ID.",
         "command_group": "Movement Commands"
     },
@@ -57,45 +68,110 @@
         "command_group": "Movement Commands"
     },
     {
+        "command": "create_formation",
+        "message_type": 1094,
+        "args": [],
+        "description": "Formation command",
+        "command_group": "Movement Commands"
+    },
+    {
         "command": "attack_object",
         "message_type": 1059,
-        "args": ["integer"],
+        "args": [
+            "integer"
+        ],
         "description": "Directs selected units to attack a specific object ID.",
         "command_group": "Combat Commands"
     },
     {
         "command": "force_attack_object",
         "message_type": 1060,
-        "args": ["integer"],
+        "args": [
+            "integer"
+        ],
         "description": "Forces units to attack a specific object, even if it's not an enemy.",
         "command_group": "Combat Commands"
     },
     {
         "command": "force_attack_ground",
         "message_type": 1061,
-        "args": ["location"],
+        "args": [
+            "location"
+        ],
         "description": "Forces units to attack a specific ground coordinate.",
+        "command_group": "Combat Commands"
+    },
+    {
+        "command": "attacksquad",
+        "message_type": 1036,
+        "args": [
+            "command-specific"
+        ],
+        "description": "Attack squad command",
         "command_group": "Combat Commands"
     },
     {
         "command": "construct",
         "message_type": 1049,
-        "args": ["integer", "location"],
+        "args": [
+            "integer",
+            "location"
+        ],
         "description": "Commands a Dozer to build a structure (template_id, location).",
+        "command_group": "Building Commands"
+    },
+    {
+        "command": "construct_line",
+        "message_type": 1050,
+        "args": [
+            "command-specific"
+        ],
+        "description": "Line construction",
+        "command_group": "Building Commands"
+    },
+    {
+        "command": "cancel_construct",
+        "message_type": 1051,
+        "args": [
+            "command-specific"
+        ],
+        "description": "Cancel construction",
         "command_group": "Building Commands"
     },
     {
         "command": "sell",
         "message_type": 1052,
-        "args": ["integer"],
+        "args": [
+            "integer"
+        ],
         "description": "Sells a selected building (object_id).",
         "command_group": "Building Commands"
     },
     {
         "command": "repair",
         "message_type": 1064,
-        "args": ["integer"],
+        "args": [
+            "integer"
+        ],
         "description": "Orders units to repair a target object (object_id).",
+        "command_group": "Building Commands"
+    },
+    {
+        "command": "resume_construction",
+        "message_type": 1065,
+        "args": [
+            "integer"
+        ],
+        "description": "Resume construction",
+        "command_group": "Building Commands"
+    },
+    {
+        "command": "set_rally_point",
+        "message_type": 1043,
+        "args": [
+            "command-specific"
+        ],
+        "description": "Set rally point",
         "command_group": "Building Commands"
     },
     {
@@ -103,27 +179,229 @@
         "message_type": 1053,
         "args": [],
         "description": "Units exit their current garrison or transport.",
-        "command_group": "Utility/Transportation"
+        "command_group": "Transportation / Utility Commands"
+    },
+    {
+        "command": "evacuate",
+        "message_type": 1054,
+        "args": [
+            "command-specific"
+        ],
+        "description": "Evacuate contents",
+        "command_group": "Transportation / Utility Commands"
+    },
+    {
+        "command": "get_repaired",
+        "message_type": 1062,
+        "args": [
+            "integer"
+        ],
+        "description": "Go to repair facility",
+        "command_group": "Transportation / Utility Commands"
+    },
+    {
+        "command": "get_healed",
+        "message_type": 1063,
+        "args": [
+            "integer"
+        ],
+        "description": "Go to healing facility",
+        "command_group": "Transportation / Utility Commands"
     },
     {
         "command": "enter_transport",
         "message_type": 1066,
-        "args": ["integer"],
+        "args": [
+            "integer"
+        ],
         "description": "Units enter a specific transport or building (object_id).",
-        "command_group": "Utility/Transportation"
+        "command_group": "Transportation / Utility Commands"
+    },
+    {
+        "command": "dock",
+        "message_type": 1067,
+        "args": [
+            "integer"
+        ],
+        "description": "Dock at target",
+        "command_group": "Transportation / Utility Commands"
+    },
+    {
+        "command": "special_power",
+        "message_type": 1040,
+        "args": [
+            "command-specific"
+        ],
+        "description": "Special power command",
+        "command_group": "Special Powers"
     },
     {
         "command": "special_power_location",
         "message_type": 1041,
-        "args": ["integer", "location"],
+        "args": [
+            "integer",
+            "location"
+        ],
         "description": "Activates a special power at a specific location (power_id, location).",
         "command_group": "Special Powers"
     },
     {
         "command": "special_power_object",
         "message_type": 1042,
-        "args": ["integer", "integer"],
+        "args": [
+            "integer",
+            "integer"
+        ],
         "description": "Activates a special power on a specific object (power_id, object_id).",
         "command_group": "Special Powers"
+    },
+    {
+        "command": "create_selected_group",
+        "message_type": 1001,
+        "args": [
+            "command-specific"
+        ],
+        "description": "Create control group",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "select_team0",
+        "message_type": 1016,
+        "args": [],
+        "description": "Select control group",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "select_team1",
+        "message_type": 1017,
+        "args": [],
+        "description": "Select control group",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "select_team2",
+        "message_type": 1018,
+        "args": [],
+        "description": "Select control group",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "select_team3",
+        "message_type": 1019,
+        "args": [],
+        "description": "Select control group",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "select_team4",
+        "message_type": 1020,
+        "args": [],
+        "description": "Select control group",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "select_team5",
+        "message_type": 1021,
+        "args": [],
+        "description": "Select control group",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "select_team6",
+        "message_type": 1022,
+        "args": [],
+        "description": "Select control group",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "select_team7",
+        "message_type": 1023,
+        "args": [],
+        "description": "Select control group",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "select_team8",
+        "message_type": 1024,
+        "args": [],
+        "description": "Select control group",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "select_team9",
+        "message_type": 1025,
+        "args": [],
+        "description": "Select control group",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "add_team0",
+        "message_type": 1026,
+        "args": [],
+        "description": "Add control group to selection",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "add_team1",
+        "message_type": 1027,
+        "args": [],
+        "description": "Add control group to selection",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "add_team2",
+        "message_type": 1028,
+        "args": [],
+        "description": "Add control group to selection",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "add_team3",
+        "message_type": 1029,
+        "args": [],
+        "description": "Add control group to selection",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "add_team4",
+        "message_type": 1030,
+        "args": [],
+        "description": "Add control group to selection",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "add_team5",
+        "message_type": 1031,
+        "args": [],
+        "description": "Add control group to selection",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "add_team6",
+        "message_type": 1032,
+        "args": [],
+        "description": "Add control group to selection",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "add_team7",
+        "message_type": 1033,
+        "args": [],
+        "description": "Add control group to selection",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "add_team8",
+        "message_type": 1034,
+        "args": [],
+        "description": "Add control group to selection",
+        "command_group": "Unit Group Management"
+    },
+    {
+        "command": "add_team9",
+        "message_type": 1035,
+        "args": [],
+        "description": "Add control group to selection",
+        "command_group": "Unit Group Management"
     }
 ]
