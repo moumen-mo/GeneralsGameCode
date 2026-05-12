@@ -1,0 +1,78 @@
+# Motivation and Long-Term Architecture Vision
+
+The current RTS agent uses a Large Language Model (LLM) to directly interpret raw game state and generate commands for Command & Conquer: Generals Zero Hour. While this already demonstrates promising behavior, pure LLM control has several major limitations in real-time strategy environments:
+
+* excessive context size
+* unstable decision making
+* weak long-term planning
+* inconsistent micro control
+* poor economic optimization
+* repeated low-value actions
+* limited mechanical precision
+* high inference cost and latency
+
+RTS games are extremely demanding AI environments because they require both:
+
+1. high-level strategic reasoning
+2. fast low-level mechanical execution
+
+LLMs are strong at:
+
+* strategic adaptation
+* semantic reasoning
+* flexible planning
+* interpreting complex situations
+
+However, LLMs are weak at:
+
+* frame-by-frame precision
+* repetitive optimization
+* tactical consistency
+* long-horizon economic efficiency
+* precise micro-management
+
+The goal of the next development stages is therefore to evolve the system from a “pure prompt-driven agent” into a hybrid RTS architecture where:
+
+* the engine handles structured game analysis,
+* learned policies handle fast execution,
+* and the LLM focuses mainly on strategic reasoning and adaptation.
+
+This architecture is closer to how advanced game AI systems are designed in research and production environments.
+
+The development roadmap is divided into five major steps:
+
+1. Improve engine preprocessing
+2. Reduce prompt/context size massively
+3. Add replay-derived strategic features
+4. Add imitation-learning policy
+5. Use the LLM mainly for planning and adaptation
+
+These steps progressively move intelligence out of the raw prompt and into specialized systems that are:
+
+* faster,
+* more stable,
+* more scalable,
+* and more strategically competent.
+
+The final objective is not merely to “make the LLM smarter,” but to create a layered RTS AI architecture where each component performs the tasks it is best suited for.
+
+Target architecture:
+
+Game Engine
+→ Feature Extraction Layer
+→ Tactical / Replay Models
+→ Strategic Memory & Retrieval
+→ LLM Strategic Planner
+→ Action Validation Layer
+→ Game Commands
+
+This approach should significantly improve:
+
+* macro gameplay
+* economy management
+* expansion timing
+* combat efficiency
+* strategic consistency
+* scalability to larger battles
+* response speed
+* and long-term win rate.
