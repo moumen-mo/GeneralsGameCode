@@ -1,0 +1,34 @@
+ Letting the LLM Make Real Strategy:
+ The key insight is separating the timescales. Don't ask the LLM to think strategically AND issue micro-commands in the same call. Use a hierarchy:
+ ┌──────────────────────────────────────────┐
+│  STRATEGIC LAYER  (every 60s)            │
+│  "What is our overall plan for the       │
+│   next 5 minutes?"                       │
+│  Output: phase, priority goals, counters │
+└──────────────┬───────────────────────────┘
+               │ feeds into
+┌──────────────▼───────────────────────────┐
+│  TACTICAL LAYER  (every 5s)              │
+│  "Given the strategy, what steps do I   │
+│   execute right now?"                    │
+│  Output: ordered task list               │
+└──────────────┬───────────────────────────┘
+               │ feeds into
+┌──────────────▼───────────────────────────┐
+│  EXECUTION LAYER  (every tick)           │
+│  Simple rule-based executor              │
+│  No LLM needed — just map tasks→commands │
+└──────────────────────────────────────────┘
+The LLM only runs on the top two layers. The bottom layer is deterministic Python — "if task is ATTACK_UNIT, issue ATTACK(uid, tid)". This removes latency from the hot path entirely.
+Make the LLM reason explicitly. Force chain-of-thought in the prompt:
+Before choosing actions, reason through:
+1. What is the enemy doing right now?
+2. What are my biggest vulnerabilities?
+3. What would a skilled human player do in the next 60 seconds?
+Then output your plan.
+
+Give it memory of what it tried. Append a short history to each strategic prompt:
+Last 3 strategic decisions:
+- Tick 120: Rushed tanks east → failed, enemy had defenses
+- Tick 180: Switched to air units → partially successful
+- Tick 240: (current)
