@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 def _get_agent_module() -> Any:
-    import AI_Agent.ai_agent_example as agent
+    import AI_Agent.ai_agent as agent
     return agent
 
 

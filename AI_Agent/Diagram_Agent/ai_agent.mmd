@@ -1,72 +1,97 @@
----
-query: "#file:ai_agent_example.py "
-references:
-  - "File: /AI_Agent/ai_agent_example.py"
-generationTime: 2026-05-13T22:24:42.534Z
----
-architecture-beta
+flowchart TB
     %% Core RPC Communication Layer
-    group rpc_layer(mdi:api)[RPC Communication]
-        service game_client(logos:aws-api-gateway)[GameRpcClient] in rpc_layer
-        service socket_handler(mdi:lan)[Socket Handler] in rpc_layer
-        service json_protocol(mdi:api)[JSON Protocol Parser] in rpc_layer
-    
+    subgraph rpc_layer ["RPC Communication"]
+        game_client["GameRpcClient"]
+        socket_handler["Socket Handler"]
+        json_protocol["JSON Protocol Parser"]
+    end
+
     %% Game State & Data Processing
-    group game_state(mdi:database)[Game State]
-        service state_manager(mdi:database)[State Manager] in game_state
-        service unit_tracker(mdi:server)[Unit Tracker] in game_state
-        service player_monitor(mdi:account)[Player Monitor] in game_state
-    
+    subgraph game_state ["Game State"]
+        state_manager[("State Manager")]
+        unit_tracker["Unit Tracker"]
+        player_monitor["Player Monitor"]
+    end
+
     %% AI Planning & Decision Making
-    group ai_planning(mdi:chart-line)[AI Planning System]
-        service local_llm(mdi:server)[Local LLM Planner] in ai_planning
-        service prompt_cache(mdi:harddisk)[Prompt Cache] in ai_planning
-        service state_compressor(mdi:harddisk)[State Compressor] in ai_planning
-        service command_library(mdi:api)[Command Library] in ai_planning
-    
+    subgraph ai_planning ["AI Planning System"]
+        local_llm["Local LLM Planner"]
+        prompt_cache["Prompt Cache"]
+        state_compressor["State Compressor"]
+        command_library["Command Library"]
+    end
+
+    %% AI Control Loop
+    subgraph local_controller ["AI Control Loop"]
+        local_ai_controller["LocalAiController"]
+        preprocess["State Preprocessor"]
+        snapshot_builder["LLM Snapshot Builder"]
+        command_sanitizer["Command Sanitizer"]
+        fallback["Fallback Behavior"]
+    end
+
     %% Game Command Execution
-    group command_exec(logos:aws-ec2)[Command Execution]
-        service message_creator(mdi:api)[Message Creator] in command_exec
-        service unit_selector(mdi:server)[Unit Selector] in command_exec
-        service action_executor(logos:aws-ecs)[Action Executor] in command_exec
-    
+    subgraph command_exec ["Command Execution"]
+        message_creator["Message Creator"]
+        unit_selector["Unit Selector"]
+        action_executor["Action Executor"]
+    end
+
     %% External Services
-    group external_services(mdi:cloud)[External Services]
-        service ollama_endpoint(mdi:server)[Ollama LLM Endpoint] in external_services
-        service game_server(mdi:server)[C&C Generals Server] in external_services
-    
+    subgraph external_services ["External Services"]
+        ollama_endpoint["Ollama LLM Endpoint"]
+        game_server["C&C Generals Server"]
+    end
+
     %% Logging & Monitoring
-    group logging_system(mdi:shield)[Logging & Diagnostics]
-        service rpc_logger(mdi:harddisk)[RPC Communication Log] in logging_system
-        service llm_interaction_log(mdi:harddisk)[LLM Interaction Log] in logging_system
-        service game_logger(mdi:chart-line)[Game Logger] in logging_system
-    
+    subgraph logging_system ["Logging & Diagnostics"]
+        rpc_logger["RPC Communication Log"]
+        llm_interaction_log["LLM Interaction Log"]
+        game_logger["Game Logger"]
+    end
+
     %% RPC Layer connections
-    game_client:R --> L:socket_handler
-    socket_handler:R --> L:json_protocol
-    
+    game_client --> socket_handler
+    socket_handler --> json_protocol
+
     %% RPC to Game State connections
-    json_protocol:B --> T:state_manager
-    state_manager:R --> L:unit_tracker
-    state_manager:R --> L:player_monitor
-    
+    json_protocol --> state_manager
+    state_manager --> unit_tracker
+    state_manager --> player_monitor
+
+    %% Controller loop connections
+    game_client --> local_ai_controller
+    local_ai_controller --> preprocess
+    preprocess --> snapshot_builder
+    snapshot_builder --> state_compressor
+    snapshot_builder --> local_llm
+    local_llm --> command_sanitizer
+    command_sanitizer --> action_executor
+    local_ai_controller --> action_executor
+    local_ai_controller --> command_library
+
     %% Game State to AI Planning
-    state_manager:R --> L:state_compressor
-    state_compressor:R --> L:prompt_cache
-    prompt_cache:R --> L:local_llm
-    command_library:L --> R:local_llm
-    
+    state_manager --> state_compressor
+    state_compressor --> prompt_cache
+    prompt_cache --> local_llm
+    command_library --- local_llm
+
     %% AI Planning to Command Execution
-    local_llm:B --> T:message_creator
-    message_creator:R --> L:unit_selector
-    unit_selector:R --> L:action_executor
-    
+    local_llm --> message_creator
+    message_creator --> unit_selector
+    unit_selector --> action_executor
+
     %% External Service connections
-    local_llm:R --> L:ollama_endpoint
-    game_client:R --> L:game_server
-    action_executor:B --> T:game_server
-    
+    local_llm -.-> ollama_endpoint
+    game_client -.-> game_server
+    action_executor -.-> game_server
+
     %% Logging connections
-    game_client:B --> T:rpc_logger
-    local_llm:B --> T:llm_interaction_log
-    state_manager:B --> T:game_logger
+    game_client -.-> rpc_logger
+    local_llm -.-> llm_interaction_log
+    state_manager -.-> game_logger
+
+    %% Styling
+    style state_manager fill:#f9f,stroke:#333,stroke-width:2px
+    style local_llm fill:#bbf,stroke:#333
+    style game_server fill:#fbb,stroke:#333
