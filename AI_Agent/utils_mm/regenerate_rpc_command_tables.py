@@ -3,9 +3,9 @@
 Regenerate the command ID tables in RPC_COMMANDS_REFERENCE.md from GameMessage::Type.
 
 Usage:
-  python utils_mm/regenerate_rpc_command_tables.py
-  python utils_mm/regenerate_rpc_command_tables.py --check
-  python utils_mm/regenerate_rpc_command_tables.py --header <path> --reference <path>
+  python AI_Agent/utils_mm/regenerate_rpc_command_tables.py
+  python AI_Agent/utils_mm/regenerate_rpc_command_tables.py --check
+  python AI_Agent/utils_mm/regenerate_rpc_command_tables.py --header <path> --reference <path>
 """
 
 from __future__ import annotations

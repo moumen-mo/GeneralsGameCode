@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Comprehensive test for 3-layer state JSON compression optimization (from tasl.txt).
+Comprehensive test for 3-layer state JSON compression optimization .
 Demonstrates Layer 1 (redundant field removal), Layer 2 (abbreviations),
 and Layer 3 (delta encoding).
 """
@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 
 
 class StateCompressor:
-    """3-layer compression for game state (from tasl.txt)."""
+    """3-layer compression for game state."""
     
     UNIT_TYPE_MAP = {
         "ranger": "RNG", "infantry": "INF", "tank": "TNK", "medium tank": "MTK",
@@ -153,7 +153,7 @@ def create_sample_snapshot() -> Dict:
 def test_compression():
     """Test all 3 compression layers."""
     print("=" * 80)
-    print("STATE JSON COMPRESSION TEST - 3-Layer Strategy (from tasl.txt)")
+    print("STATE JSON COMPRESSION TEST - 3-Layer Strategy")
     print("=" * 80)
     print()
 

@@ -56,23 +56,127 @@ These steps progressively move intelligence out of the raw prompt and into speci
 
 The final objective is not merely to “make the LLM smarter,” but to create a layered RTS AI architecture where each component performs the tasks it is best suited for.
 
-Target architecture:
+Step 1 — Improve Engine Preprocessing:
+Goal:
+Transform raw game state into high-value structured RTS information before the LLM sees it.
 
-Game Engine
-→ Feature Extraction Layer
-→ Tactical / Replay Models
-→ Strategic Memory & Retrieval
-→ LLM Strategic Planner
-→ Action Validation Layer
-→ Game Commands
+The engine should do the “RTS bookkeeping,” not the LLM.
 
-This approach should significantly improve:
+1.1 Build a Game Analyzer Layer
 
-* macro gameplay
-* economy management
-* expansion timing
-* combat efficiency
-* strategic consistency
-* scalability to larger battles
-* response speed
-* and long-term win rate.
+Raw state:
+
+{
+  "money": 5000,
+  "units": [...]
+}
+
+Better processed state:
+
+{
+  "economy": {
+    "income_level": "low",
+    "idle_dozers": 1,
+    "supply_count": 1
+  },
+  "military": {
+    "army_strength": 0.42,
+    "anti_air": false
+  }
+}
+
+You want semantic RTS features.
+
+1.2 Detect Strategic Situations
+
+Add engine-side detectors:
+
+Examples
+{
+  "enemy_rush_detected": true,
+  "enemy_air_threat": false,
+  "floating_resources": true,
+  "base_under_attack": false,
+  "can_expand_safely": true
+}
+
+This massively improves decisions.
+
+1.3 Add Unit Role Classification
+
+Instead of:
+
+{
+  "name": "AmericaTankCrusader"
+}
+
+Add:
+
+{
+  "role": "frontline_tank",
+  "threat_type": "ground"
+}
+
+This reduces reasoning burden.
+
+1.4 Add Economy Metrics
+
+Very important.
+
+Compute:
+
+{
+  "income_per_minute": 3200,
+  "resource_collection_efficiency": 0.71,
+  "idle_worker_count": 2,
+  "production_idle_time": 14
+}
+
+LLMs are terrible at inferring these from raw state.
+
+1.5 Add Combat Evaluations
+
+Compute approximate battle outcomes.
+
+Example:
+
+{
+  "local_battles": [
+    {
+      "location": [1200, 800],
+      "friendly_strength": 0.65,
+      "enemy_strength": 0.41,
+      "win_probability": 0.78
+    }
+  ]
+}
+
+This becomes extremely useful.
+
+1.6 Add Expansion Analysis
+
+Example:
+
+{
+  "expansions": [
+    {
+      "location": [1350, 2200],
+      "safe": true,
+      "distance_score": 0.62,
+      "resource_value": 0.94
+    }
+  ]
+}
+1.7 Add Tactical Zones
+
+Partition map into regions:
+
+{
+  "map_control": {
+    "north": "enemy",
+    "center": "contested",
+    "south": "friendly"
+  }
+}
+
+This helps strategic planning enormously.
