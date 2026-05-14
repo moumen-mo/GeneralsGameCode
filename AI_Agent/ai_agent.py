@@ -92,7 +92,7 @@ BUILDING_KEYWORDS = (
     "wall",
 )
 
-DEFAULT_SYSTEM_PROMPT_PATH = "system_prompt.txt"
+DEFAULT_SYSTEM_PROMPT_PATH = "AI_Agent/system_prompt.txt"
 
 
 def _load_system_prompt(path: str) -> str:
@@ -109,7 +109,7 @@ def _load_system_prompt(path: str) -> str:
 _system_prompt_path = os.getenv("SYSTEM_PROMPT_PATH", DEFAULT_SYSTEM_PROMPT_PATH)
 LLM_COMMAND_TUTOR = _load_system_prompt(_system_prompt_path)
 
-DEFAULT_COMMAND_LIBRARY_PATH = "Commands_Library.json"
+DEFAULT_COMMAND_LIBRARY_PATH = "AI_Agent/Commands_Library.json"
 
 
 def _load_command_library(path: str) -> List[Dict]:
@@ -406,7 +406,7 @@ class GameRpcClient:
 class SystemPromptCache:
     """
     Cache for system prompt to avoid resending static command schema on every tick.
-    This implements the optimization from tasl.txt:
+    This implements the optimization where:
     - System Prompt (static schema) is sent once and cached
     - User Message (dynamic game state) is sent every tick
     """
@@ -664,7 +664,7 @@ class LocalLlmPlanner:
         self.enable_thinking = os.getenv("LOCAL_LLM_THINK", "0") == "1"
         self.llm_debug = os.getenv("LLM_DEBUG", "0") == "1"
         self.llm_log_enabled = os.getenv("LLM_INTERACTION_LOG_ENABLED", "1") == "1"
-        self.llm_log_file = os.getenv("LLM_INTERACTION_LOG_FILE", "llm_interactions_log.txt")
+        self.llm_log_file = os.getenv("LLM_INTERACTION_LOG_FILE", "AI_Agent/llm_interactions_log.txt")
         
         # Initialize prompt cache to avoid resending command schema every tick
         self.prompt_cache = SystemPromptCache()
