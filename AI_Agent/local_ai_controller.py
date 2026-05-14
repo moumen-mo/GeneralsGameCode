@@ -3,27 +3,40 @@ import os
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+from dotenv import load_dotenv
 
-def _get_agent_module() -> Any:
-    import AI_Agent.ai_agent as agent
-    return agent
+from AI_Agent.game_logging import game_log
+from AI_Agent.game_types import IGNORE_PLAYER_SIDES, Player, Position, Unit
+from AI_Agent.local_agent import LocalLlmPlanner
+from AI_Agent.prompt_utils import (
+    DEFAULT_COMMAND_LIBRARY_PATH,
+    LLM_COMMAND_TUTOR,
+    _load_command_library,
+    build_system_prompt_with_command_library,
+)
+from AI_Agent.state_compressor import StateCompressor
+
+load_dotenv()
+
 
 
 class LocalAiController:
     def __init__(self, client: Any):
         self.client = client
-        agent = _get_agent_module()
-        self._agent = agent
-        self.game_log = agent.game_log
-        self.IGNORE_PLAYER_SIDES = agent.IGNORE_PLAYER_SIDES
-        self.DEFAULT_COMMAND_LIBRARY_PATH = agent.DEFAULT_COMMAND_LIBRARY_PATH
-        self._load_command_library = agent._load_command_library
-        self.Player = agent.Player
-        self.Unit = agent.Unit
-        self.Position = agent.Position
+        self.game_log = game_log
+        self.IGNORE_PLAYER_SIDES = IGNORE_PLAYER_SIDES
+        self.DEFAULT_COMMAND_LIBRARY_PATH = DEFAULT_COMMAND_LIBRARY_PATH
+        self._load_command_library = _load_command_library
+        self.Player = Player
+        self.Unit = Unit
+        self.Position = Position
 
-        self.planner = agent.LocalLlmPlanner()
-        self.state_compressor = agent.StateCompressor()  # Initialize state compression (3-layer)
+        self.planner = LocalLlmPlanner(
+            game_log_fn=game_log,
+            build_system_prompt_fn=build_system_prompt_with_command_library,
+            llm_command_tutor=LLM_COMMAND_TUTOR,
+        )
+        self.state_compressor = StateCompressor()
         self.frame_count = 0
         self.decision_interval = int(os.getenv("DECISION_INTERVAL_FRAMES", "12"))
         self.max_frames = int(os.getenv("MAX_FRAMES", "10000"))
@@ -910,6 +923,6 @@ class LocalAiController:
                 time.sleep(self.sleep_seconds)
         finally:
             if self.planner.enabled and self.planner.prompt_cache.use_cache:
-                self.planner.prompt_cache.log_cache_stats()
+                self.planner.prompt_cache.log_cache_stats(self.game_log)
             if self.state_compressor.compress_enabled:
                 self.state_compressor.log_compression_stats()
