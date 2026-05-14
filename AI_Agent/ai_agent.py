@@ -10,7 +10,7 @@ import os
 from dotenv import load_dotenv
 
 from AI_Agent.game_logging import game_log
-from AI_Agent.local_ai_controller import LocalAiController
+from AI_Agent.game_analyser import GameAnalyser
 from AI_Agent.rpc_client import GameRpcClient
 
 load_dotenv()
@@ -53,7 +53,7 @@ def main() -> None:
                 f"(${float(p.get('money', 0.0)):.0f})"
             )
 
-    controller = LocalAiController(client)
+    controller = GameAnalyser(client)
     try:
         controller.run()
     except KeyboardInterrupt:
