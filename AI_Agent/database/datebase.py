@@ -153,6 +153,30 @@ class Database:
             print(f"Error saving query results to table: {e}")
             self.connection.rollback()
             cursor.close()
+    def delete_specific_columns_in_table(self, table_name: str, columns_to_delete: List[str]):
+        existing_columns = self.get_column_names(table_name)
+        remaining_columns = [col for col in existing_columns if col not in columns_to_delete]
+        if not remaining_columns:
+            print("Cannot delete all columns from the table.")
+            return
+
+        temp_table_name = f"{table_name}_temp"
+        columns_str = ", ".join([f"{col} TEXT" for col in remaining_columns])
+        create_query = f"CREATE TABLE {temp_table_name} ({columns_str})"
+        insert_query = f"INSERT INTO {temp_table_name} ({', '.join(remaining_columns)}) SELECT {', '.join(remaining_columns)} FROM {table_name}"
+        drop_query = f"DROP TABLE {table_name}"
+        rename_query = f"ALTER TABLE {temp_table_name} RENAME TO {table_name}"
+
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(create_query)
+            cursor.execute(insert_query)
+            cursor.execute(drop_query)
+            cursor.execute(rename_query)
+            self.connection.commit()
+        except sqlite3.Error as e:
+            print(f"Error deleting specific columns: {e}")
+            self.connection.rollback()
 
     def fetch_by_json_list_contains(self, table_name: str, column: str, item: Any, conditions: Optional[Dict[str, Any]] = None):
         rows = self.fetch_data(table_name, conditions=conditions, as_dict=True)

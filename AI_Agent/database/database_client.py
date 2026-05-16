@@ -31,15 +31,5 @@ def build_main_database():
 if __name__ == "__main__":
     db = Database("zero_hour.db")
     db.connect()
-    try:
-        data_usa = db.fetch_data("armies_units", conditions={"army_name": "america","economy_unit": 1}, as_dict=True)
-        db.save_query_results_to_table(data_usa, "usa_economy_units")
-        data_chaina = db.fetch_data("armies_units", conditions={"army_name": "china","economy_unit": 1}, as_dict=True)
-        db.save_query_results_to_table(data_chaina, "china_economy_units")
-        data_gla = db.fetch_data("armies_units", conditions={"army_name": "gla","economy_unit": 1}, as_dict=True)
-        db.save_query_results_to_table(data_gla, "gla_economy_units")
-
-    except Exception as exc:
-        print(f"Unable to load templates: {exc}")
-    finally:
-        db.close()
+    db.delete_specific_columns_in_table("usa_economy_units", ["role", "strong_against", "weak_against", "description","fight_unit"])
+    db.close()
