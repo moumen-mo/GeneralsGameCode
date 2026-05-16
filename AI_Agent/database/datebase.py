@@ -16,7 +16,13 @@ class Database:
             print("Database connection established.")
         except sqlite3.Error as e:
             print(f"Error connecting to database: {e}")
-
+    def get_column_names(self, table_name: str) -> List[str]:
+        query = f"PRAGMA table_info({table_name})"
+        columns_info = self.execute_query(query)
+        if columns_info is None:
+            return []
+        return [col["name"] for col in columns_info]
+    
     def execute_query(self, query: str, params: Optional[tuple] = None):
         if self.connection is None:
             print("No database connection.")
@@ -116,6 +122,37 @@ class Database:
         if rows is None:
             return None
         return [self._deserialize_row(row) for row in rows] if as_dict else rows
+    def save_query_results_to_table(self, results: List[tuple], new_table_name: str):
+        if self.connection is None:
+            print("No database connection.")
+            return
+        try:
+            if not results:
+                print("Query returned no results.")
+                return
+            cursor = self.connection.cursor()
+
+            # Accept list of dicts or list of tuples
+            if isinstance(results[0], dict):
+                columns = list(results[0].keys())
+                rows = [tuple(self._serialize_value(r[col]) for col in columns) for r in results]
+            else:
+                # Assume sequence of tuples; generate generic column names
+                cols_count = len(results[0])
+                columns = [f"col{i}" for i in range(1, cols_count + 1)]
+                rows = results
+
+            columns_str = ", ".join([f"{col} TEXT" for col in columns])
+            create_query = f"CREATE TABLE IF NOT EXISTS {new_table_name} ({columns_str})"
+            cursor.execute(create_query)
+            placeholders = ", ".join(["?" for _ in columns])
+            insert_query = f"INSERT INTO {new_table_name} ({', '.join(columns)}) VALUES ({placeholders})"
+            cursor.executemany(insert_query, rows)
+            self.connection.commit()
+        except sqlite3.Error as e:
+            print(f"Error saving query results to table: {e}")
+            self.connection.rollback()
+            cursor.close()
 
     def fetch_by_json_list_contains(self, table_name: str, column: str, item: Any, conditions: Optional[Dict[str, Any]] = None):
         rows = self.fetch_data(table_name, conditions=conditions, as_dict=True)
@@ -145,44 +182,39 @@ class Database:
         with open(file_path, "r", encoding="utf-8") as file:
             source = file.read()
         tree = ast.parse(source, file_path)
-
         # If the file contains only a top-level literal list/dict, return it.
         if len(tree.body) == 1 and isinstance(tree.body[0], ast.Expr):
-            return ast.literal_eval(tree.body[0].value)
+            parsed = ast.literal_eval(tree.body[0].value)
+            if isinstance(parsed, (list, dict)):
+                return parsed
+            raise ValueError(f"Top-level literal in {file_path} is not a list or dict")
 
         # Otherwise, scan for the first assignment of a list/dict.
         for node in tree.body:
             if isinstance(node, ast.Assign):
                 value = node.value
                 if isinstance(value, (ast.List, ast.Dict)):
-                    return ast.literal_eval(value)
+                    parsed = ast.literal_eval(value)
+                    if isinstance(parsed, (list, dict)):
+                        return parsed
+                    raise ValueError(f"Assigned value in {file_path} is not a list or dict")
 
         raise ValueError(f"No top-level list or dict literal found in {file_path}")
 
     def load_and_insert_from_file(self, file_path: str, table_name: str, primary_key: Optional[str] = "template_name"):
         rows = self.load_python_data_file(file_path)
-        if not rows:
-            return
+        if rows is None:
+            raise ValueError(f"Loaded data from {file_path} is None")
+
+        # If a single dict was returned, wrap it in a list
+        if isinstance(rows, dict):
+            rows = [rows]
+
+        if not isinstance(rows, list) or len(rows) == 0:
+            raise ValueError(f"No rows to insert from {file_path}")
+
+        if not isinstance(rows[0], dict):
+            raise ValueError(f"Expected rows to be a list of dicts, got {type(rows[0])}")
+
         self.create_table_from_sample(table_name, rows[0], primary_key=primary_key)
         self.insert_many(table_name, rows, replace=True)
-    
-if __name__ == "__main__":
-    db = Database("zero_hour.db")
-    db.connect()
-    template_file = "E:\\PythonProjects\\General_Zero_Hour\\GeneralsGameCode\\AI_Agent\\template_database.txt"
-    try:
-        db.load_and_insert_from_file(template_file, "armies_units", primary_key="template_name")
-        data = db.fetch_data("armies_units", conditions={"army_name": "america"})
-        print(data[:3])
-
-        matches = db.fetch_by_json_list_contains(
-            "armies_units",
-            "strong_against",
-            "infantry",
-            conditions={"army_name": "america"}
-        )
-        print("Example rows where strong_against contains 'infantry':", matches[:3])
-    except Exception as exc:
-        print(f"Unable to load templates: {exc}")
-    finally:
-        db.close()
