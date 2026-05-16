@@ -1,0 +1,16 @@
+{
+    "player_id":2,
+    "army_name":"test",
+    "money":1000,
+    "income":100,
+    "economy_units":[
+        {
+            "unit_type":"worker",
+            "count":5
+        },
+        {
+            "unit_type":"soldier",
+            "count":10
+        }
+    ]
+}
